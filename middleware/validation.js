@@ -51,6 +51,114 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 /**
+ * Fonctions de validation génériques pour les body
+ */
+const bodyValidation = {
+  integer: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isInt().withMessage(`${field} doit être un nombre entier`),
+    optional: (field) => body(field).optional().isInt().withMessage(`${field} doit être un nombre entier`)
+  },
+  string: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isString().withMessage(`${field} doit être une chaîne de caractères`).trim(),
+    optional: (field) => body(field).optional().isString().withMessage(`${field} doit être une chaîne de caractères`).trim()
+  },
+  boolean: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isBoolean().withMessage(`${field} doit être un booléen`),
+    optional: (field) => body(field).optional().isBoolean().withMessage(`${field} doit être un booléen`)
+  },
+  email: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isEmail().normalizeEmail().withMessage(`${field} doit être un email valide`),
+    optional: (field) => body(field).optional().isEmail().normalizeEmail().withMessage(`${field} doit être un email valide`)
+  },
+  url: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isURL().withMessage(`${field} doit être une URL valide`),
+    optional: (field) => body(field).optional().isURL().withMessage(`${field} doit être une URL valide`)
+  },
+  date: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isISO8601().withMessage(`${field} doit être une date valide`),
+    optional: (field) => body(field).optional().isISO8601().withMessage(`${field} doit être une date valide`)
+  },
+  uuid: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isUUID().withMessage(`${field} doit être un UUID valide`),
+    optional: (field) => body(field).optional().isUUID().withMessage(`${field} doit être un UUID valide`)
+  },
+  enum: (values) => ({
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isIn(values).withMessage(`${field} doit être l'une des valeurs suivantes: ${values.join(', ')}`),
+    optional: (field) => body(field).optional().isIn(values).withMessage(`${field} doit être l'une des valeurs suivantes: ${values.join(', ')}`)
+  }),
+  array: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isArray().withMessage(`${field} doit être un tableau`),
+    optional: (field) => body(field).optional().isArray().withMessage(`${field} doit être un tableau`)
+  },
+  object: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isObject().withMessage(`${field} doit être un objet`),
+    optional: (field) => body(field).optional().isObject().withMessage(`${field} doit être un objet`)
+  },
+  mongoId: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isMongoId().withMessage(`${field} doit être un ID MongoDB valide`),
+    optional: (field) => body(field).optional().isMongoId().withMessage(`${field} doit être un ID MongoDB valide`)
+  },
+  float: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isFloat().withMessage(`${field} doit être un nombre décimal`),
+    optional: (field) => body(field).optional().isFloat().withMessage(`${field} doit être un nombre décimal`)
+  },
+  postalCode: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isPostalCode('any').withMessage(`${field} doit être un code postal valide`),
+    optional: (field) => body(field).optional().isPostalCode('any').withMessage(`${field} doit être un code postal valide`)
+  },
+  mobilePhone: {
+    required: (field) => body(field).exists().withMessage(`${field} est requis`).isMobilePhone('any').withMessage(`${field} doit être un numéro de téléphone valide`),
+    optional: (field) => body(field).optional().isMobilePhone('any').withMessage(`${field} doit être un numéro de téléphone valide`)
+  }
+};
+
+/**
+ * Fonctions de validation génériques pour les query parameters
+ */
+const queryValidation = {
+  // Méthodes de base
+  integer: (field) => query(field).optional().isInt().withMessage(`${field} doit être un nombre entier`).toInt(),
+  string: (field) => query(field).optional().isString().withMessage(`${field} doit être une chaîne de caractères`).trim(),
+  boolean: (field) => query(field).optional().isBoolean().withMessage(`${field} doit être un booléen`).toBoolean(),
+  date: (field) => query(field).optional().isISO8601().withMessage(`${field} doit être une date valide`),
+  uuid: (field) => query(field).optional().isUUID().withMessage(`${field} doit être un UUID valide`),
+  mongoId: (field) => query(field).optional().isMongoId().withMessage(`${field} doit être un ID MongoDB valide`),
+  float: (field) => query(field).optional().isFloat().withMessage(`${field} doit être un nombre décimal`).toFloat(),
+  enum: (values) => (field) => query(field).optional().isIn(values).withMessage(`${field} doit être l'une des valeurs suivantes: ${values.join(', ')}`),
+  
+  // Validations spécifiques
+  page: query('page').optional().isInt({ min: 1 }).withMessage('Le numéro de page doit être un entier positif').toInt(),
+  limit: query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('La limite doit être entre 1 et 100').toInt(),
+  
+  // Validations composées
+  pagination: [
+    query('page').optional().isInt({ min: 1 }).withMessage('Le numéro de page doit être un entier positif').toInt(),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('La limite doit être entre 1 et 100').toInt()
+  ],
+  
+  dateRange: [
+    query('date_debut').optional().isISO8601().withMessage('Date de début invalide'),
+    query('date_fin').optional().isISO8601().withMessage('Date de fin invalide')
+      .custom((value, { req }) => {
+        if (req.query.date_debut && value && new Date(value) <= new Date(req.query.date_debut)) {
+          throw new Error('La date de fin doit être après la date de début');
+        }
+        return true;
+      })
+  ]
+};
+
+/**
+ * Fonctions de validation génériques pour les paramètres d'URL
+ */
+const paramValidation = {
+  id: param('id').isUUID().withMessage('ID invalide'),
+  uuid: (field) => param(field).isUUID().withMessage(`${field} doit être un UUID valide`),
+  mongoId: (field) => param(field).isMongoId().withMessage(`${field} doit être un ID MongoDB valide`),
+  integer: (field) => param(field).isInt().withMessage(`${field} doit être un nombre entier`).toInt()
+};
+
+/**
  * Validations pour l'authentification
  */
 const authValidation = {
@@ -123,6 +231,25 @@ const authValidation = {
       .withMessage('Le nouveau mot de passe doit contenir au moins 12 caractères')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
       .withMessage('Le nouveau mot de passe doit contenir au moins une majuscule, une minuscule, un chiffre et un caractère spécial')
+  ],
+
+  forgotPassword: [
+    body('email')
+      .isEmail()
+      .normalizeEmail()
+      .withMessage('Email invalide')
+  ],
+
+  resetPassword: [
+    body('token')
+      .notEmpty()
+      .withMessage('Token de réinitialisation requis'),
+
+    body('newPassword')
+      .isLength({ min: 12 })
+      .withMessage('Le nouveau mot de passe doit contenir au moins 12 caractères')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+      .withMessage('Le nouveau mot de passe doit contenir au moins une majuscule, une minuscule, un chiffre et un caractère spécial')
   ]
 };
 
@@ -155,7 +282,7 @@ const etablissementValidation = {
     body('code_postal')
       .optional()
       .isPostalCode('any')
-      .withMessage('Code postal Togolais invalide'),
+      .withMessage('Code postal invalide'),
 
     body('telephone')
       .optional()
@@ -174,7 +301,7 @@ const etablissementValidation = {
 
     body('fuseau_horaire')
       .optional()
-      .isIn(['Europe/Paris', 'Europe/Berlin', 'UTC', 'Europe/London'])
+      .isIn(['Europe/Paris', 'Europe/Berlin', 'UTC', 'Europe/London', 'Africa/Lome'])
       .withMessage('Fuseau horaire non supporté'),
 
     body('langue')
@@ -184,7 +311,12 @@ const etablissementValidation = {
 
     body('annee_scolaire_courante')
       .matches(/^\d{4}-\d{4}$/)
-      .withMessage('Format d\'année scolaire invalide (YYYY-YYYY)')
+      .withMessage('Format d\'année scolaire invalide (YYYY-YYYY)'),
+
+    body('statut')
+      .optional()
+      .isIn(Object.values(StatutEtablissement))
+      .withMessage('Statut d\'établissement invalide')
   ],
 
   update: [
@@ -202,7 +334,7 @@ const etablissementValidation = {
     body('statut')
       .optional()
       .isIn(Object.values(StatutEtablissement))
-      .withMessage('Statut invalide')
+      .withMessage('Statut d\'établissement invalide')
   ],
 
   idParam: [
@@ -581,37 +713,62 @@ const rattrapageValidation = {
 };
 
 /**
- * Validations pour les query parameters communs
+ * Validations pour les notifications
  */
-const queryValidation = {
-  pagination: [
-    query('page')
-      .optional()
-      .isInt({ min: 1 })
-      .withMessage('Le numéro de page doit être un entier positif'),
+const notificationValidation = {
+  create: [
+    body('utilisateur_id')
+      .isUUID()
+      .withMessage('ID utilisateur invalide'),
 
-    query('limit')
+    body('type')
       .optional()
-      .isInt({ min: 1, max: 100 })
-      .withMessage('La limite doit être entre 1 et 100')
+      .isIn(Object.values(TypeNotification))
+      .withMessage('Type de notification invalide'),
+
+    body('titre')
+      .trim()
+      .notEmpty()
+      .withMessage('Le titre est requis')
+      .isLength({ max: 255 })
+      .withMessage('Le titre est trop long'),
+
+    body('message')
+      .trim()
+      .notEmpty()
+      .withMessage('Le message est requis')
+      .isLength({ max: 1000 })
+      .withMessage('Le message est trop long'),
+
+    body('lien_action')
+      .optional()
+      .isURL()
+      .withMessage('URL invalide')
+      .isLength({ max: 500 })
+      .withMessage('Le lien est trop long'),
+
+    body('canal')
+      .optional()
+      .isIn(Object.values(CanalNotification))
+      .withMessage('Canal de notification invalide'),
+
+    body('priorite')
+      .optional()
+      .isIn(Object.values(PrioriteNotification))
+      .withMessage('Priorité invalide')
   ],
 
-  dateRange: [
-    query('date_debut')
+  cleanup: [
+    body('jours')
       .optional()
-      .isDate()
-      .withMessage('Date de début invalide'),
+      .isInt({ min: 1, max: 365 })
+      .withMessage('Le nombre de jours doit être entre 1 et 365')
+  ],
 
-    query('date_fin')
-      .optional()
-      .isDate()
-      .withMessage('Date de fin invalide')
-      .custom((value, { req }) => {
-        if (req.query.date_debut && value <= req.query.date_debut) {
-          throw new Error('La date de fin doit être après la date de début');
-        }
-        return true;
-      })
+  idParam: [
+    param('id')
+      .isUUID()
+      .withMessage('ID notification invalide')
   ]
 };
 
@@ -623,6 +780,61 @@ const exportValidation = {
     query('format')
       .isIn(Object.values(FormatExport))
       .withMessage('Format d\'export invalide')
+  ]
+};
+
+/**
+ * Validations pour les contraintes
+ */
+const contrainteValidation = {
+  create: [
+    body('type_contrainte')
+      .isIn(Object.values(TypeContrainte))
+      .withMessage('Type de contrainte invalide'),
+
+    body('categorie')
+      .isIn(Object.values(CategorieContrainte))
+      .withMessage('Catégorie de contrainte invalide'),
+
+    body('priorite')
+      .isIn(Object.values(PrioriteContrainte))
+      .withMessage('Priorité de contrainte invalide'),
+
+    body('description')
+      .trim()
+      .isLength({ min: 5, max: 1000 })
+      .withMessage('La description doit contenir entre 5 et 1000 caractères'),
+
+    body('donnees_contrainte')
+      .isObject()
+      .withMessage('Les données de contrainte doivent être un objet JSON'),
+
+    body('est_globale')
+      .optional()
+      .isBoolean()
+      .withMessage('est_globale doit être un booléen'),
+
+    body('applicable_a_partir')
+      .optional()
+      .isDate()
+      .withMessage('Date d\'applicabilité invalide'),
+
+    body('applicable_jusqu_a')
+      .optional()
+      .isDate()
+      .withMessage('Date d\'expiration invalide')
+      .custom((value, { req }) => {
+        if (req.body.applicable_a_partir && value && new Date(value) <= new Date(req.body.applicable_a_partir)) {
+          throw new Error('La date d\'expiration doit être après la date d\'applicabilité');
+        }
+        return true;
+      })
+  ],
+
+  idParam: [
+    param('id')
+      .isUUID()
+      .withMessage('ID contrainte invalide')
   ]
 };
 
@@ -656,8 +868,54 @@ const validateFile = (allowedTypes, maxSize) => {
   };
 };
 
+/**
+ * Fonction utilitaire pour créer des validations personnalisées
+ */
+const createCustomValidation = (schema) => {
+  const validations = [];
+
+  for (const [field, rules] of Object.entries(schema)) {
+    let validation = body(field);
+
+    if (rules.required) {
+      validation = validation.exists().withMessage(`${field} est requis`);
+    } else {
+      validation = validation.optional();
+    }
+
+    if (rules.type === 'string') {
+      validation = validation.isString().withMessage(`${field} doit être une chaîne`);
+      if (rules.min) validation = validation.isLength({ min: rules.min });
+      if (rules.max) validation = validation.isLength({ max: rules.max });
+      validation = validation.trim();
+    } else if (rules.type === 'integer') {
+      validation = validation.isInt().withMessage(`${field} doit être un entier`);
+      if (rules.min) validation = validation.isInt({ min: rules.min });
+      if (rules.max) validation = validation.isInt({ max: rules.max });
+    } else if (rules.type === 'boolean') {
+      validation = validation.isBoolean().withMessage(`${field} doit être un booléen`);
+    } else if (rules.type === 'email') {
+      validation = validation.isEmail().withMessage(`${field} doit être un email valide`);
+    } else if (rules.type === 'enum') {
+      validation = validation.isIn(rules.values).withMessage(`${field} doit être l'une des valeurs: ${rules.values.join(', ')}`);
+    }
+
+    validations.push(validation);
+  }
+
+  return validations;
+};
+
 module.exports = {
+  // Middleware principal
   handleValidationErrors,
+  
+  // Validations génériques
+  bodyValidation,
+  queryValidation,
+  paramValidation,
+  
+  // Validations spécifiques par module
   authValidation,
   etablissementValidation,
   classeValidation,
@@ -666,7 +924,11 @@ module.exports = {
   salleValidation,
   emploiTempsValidation,
   rattrapageValidation,
-  queryValidation,
+  notificationValidation,
+  contrainteValidation,
   exportValidation,
-  validateFile
+  
+  // Utilitaires
+  validateFile,
+  createCustomValidation
 };

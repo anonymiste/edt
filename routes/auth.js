@@ -53,7 +53,7 @@ router.post('/setup-2fa',
 );
 
 router.post('/activate-2fa',
-  // authenticateToken,
+  authenticateToken,
   authController.activate2FA
 );
 

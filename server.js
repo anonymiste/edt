@@ -14,7 +14,7 @@ app.use(helmet({
 
 app.use(cors({
   // origin: process.env.FRONTEND_URL || 'http://localhost:5174',
-  origin: 'http://localhost:5173',
+  origin: 'http://localhost:1102',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -51,6 +51,7 @@ const emploiTempsRoutes = require('./routes/emplois-temps');
 const rattrapageRoutes = require('./routes/rattrapages');
 const absenceRoutes = require('./routes/absences');
 const statistiqueRoutes = require('./routes/statistiques');
+const notificationRoutes = require('./routes/notifications');
 
 // Routes API
 app.use('/api/auth', authRoutes);
@@ -65,6 +66,7 @@ app.use('/api/emplois-temps', emploiTempsRoutes);
 app.use('/api/rattrapages', rattrapageRoutes);
 app.use('/api/absences', absenceRoutes);
 app.use('/api/statistiques', statistiqueRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Routes système
 app.get('/api/health', (req, res) => {
@@ -93,7 +95,8 @@ app.get('/api', (req, res) => {
       emplois_temps: '/api/emplois-temps',
       rattrapages: '/api/rattrapages',
       absences: '/api/absences',
-      statistiques: '/api/statistiques'
+      statistiques: '/api/statistiques',
+      notifications: '/api/notifications'
     },
     documentation: '/api/docs'
   });

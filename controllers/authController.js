@@ -13,14 +13,14 @@ const authController = {
    */
   register: async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          error: 'Données invalides',
-          details: errors.array(),
-          code: 'VALIDATION_ERROR'
-        });
-      }
+      // const errors = validationResult(req);
+      // if (!errors.isEmpty()) {
+      //   return res.status(400).json({
+      //     error: 'Données invalides',
+      //     details: errors.array(),
+      //     code: 'VALIDATION_ERROR'
+      //   });
+      // }
 
       const { email, password, nom, prenom, role, telephone, etablissement_id } = req.body;
 
@@ -71,13 +71,13 @@ const authController = {
       if (rolesRequiring2FA.includes(role)) {
         const twoFASecret = AuthService.generate2FASecret({ email });
         utilisateurData.deux_fa_secret = twoFASecret.secret;
-        
+
         // Générer le QR Code
         const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
-        
+
         // Créer l'utilisateur
         const utilisateur = await Utilisateur.create(utilisateurData);
-        
+
         // Journaliser la création de compte
         await LogConnexion.create({
           utilisateur_id: utilisateur.id,
@@ -90,7 +90,7 @@ const authController = {
 
         // Générer le token JWT
         const token = jwt.sign(
-          { 
+          {
             id: utilisateur.id,
             email: utilisateur.email,
             role: utilisateur.role
@@ -122,7 +122,7 @@ const authController = {
 
         // Générer le token JWT
         const token = jwt.sign(
-          { 
+          {
             id: utilisateur.id,
             email: utilisateur.email,
             role: utilisateur.role
@@ -183,7 +183,7 @@ const authController = {
       const { email, password, twoFAToken } = req.body;
 
       // Rechercher l'utilisateur
-      const utilisateur = await Utilisateur.findOne({ 
+      const utilisateur = await Utilisateur.findOne({
         where: { email },
         include: [{
           association: 'etablissement',
@@ -242,8 +242,8 @@ const authController = {
       ];
 
       // Vérifier si l'utilisateur nécessite la 2FA
-      const requires2FA = utilisateur.deux_fa_active || 
-                         (rolesRequiring2FA.includes(utilisateur.role) && utilisateur.deux_fa_secret);
+      const requires2FA = utilisateur.deux_fa_active ||
+        (rolesRequiring2FA.includes(utilisateur.role) && utilisateur.deux_fa_secret);
 
       if (requires2FA) {
         // Si le token 2FA n'est pas fourni, demander l'authentification 2FA
@@ -275,7 +275,7 @@ const authController = {
       await utilisateur.update({ date_derniere_connexion: new Date() });
 
       // Générer le token JWT
-      const tokenPayload = { 
+      const tokenPayload = {
         id: utilisateur.id,
         email: utilisateur.email,
         role: utilisateur.role
@@ -350,7 +350,7 @@ const authController = {
 
       // Générer le token JWT final
       const token = jwt.sign(
-        { 
+        {
           id: utilisateur.id,
           email: utilisateur.email,
           role: utilisateur.role,
@@ -391,7 +391,7 @@ const authController = {
 
       // Générer un nouveau secret 2FA
       const twoFASecret = AuthService.generate2FASecret({ email: utilisateur.email });
-      
+
       // Générer le QR Code
       const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
 
@@ -421,13 +421,13 @@ const authController = {
    */
   activate2FA: async (req, res) => {
     try {
-      
+
       const { twoFAToken } = req.body;
       const { userData } = req.body;
       console.log(req.body)
       const utilisateur = await Utilisateur.findByPk(userData.id);
       console.log(utilisateur);
-      
+
       if (!utilisateur.deux_fa_secret) {
         return res.status(400).json({
           error: 'Veuillez d\'abord configurer la 2FA',
@@ -435,7 +435,7 @@ const authController = {
         });
       }
 
-      if (utilisateur.deux_fa_active) {        
+      if (utilisateur.deux_fa_active) {
         return res.status(400).json({
           error: '2FA déjà activée',
           code: '2FA_ALREADY_ACTIVE'
@@ -591,7 +591,7 @@ const authController = {
       });
 
       const newToken = jwt.sign(
-        { 
+        {
           id: utilisateur.id,
           email: utilisateur.email,
           role: utilisateur.role
