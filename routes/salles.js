@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const salleController = require('../controllers/salleController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { salleValidation, queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('salles'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [
@@ -24,7 +25,8 @@ router.get('/',
 );
 
 router.post('/', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   salleValidation.create,
   handleValidationErrors,
   salleController.createSalle
@@ -45,19 +47,22 @@ router.post('/:id/check-availability',
 
 // Routes accessibles aux rôles autorisés seulement
 router.put('/:id', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   salleValidation.update,
   handleValidationErrors,
   salleController.updateSalle
 );
 
 router.post('/:id/maintenance', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   salleController.setMaintenance
 );
 
 router.post('/:id/available', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   salleController.setDisponible
 );
 

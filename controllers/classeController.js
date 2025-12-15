@@ -1,8 +1,9 @@
 // controllers/classeController.js
-const { Classe, Etablissement, Cours, EmploiTemps } = require('../database/models');
+const { Classe, Etablissement, Cours, EmploiTemps, LogModification } = require('../database/models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { StatutClasse, TypeOperation } = require('../utils/enums');
+const { applyEtablissementScope, resolveScopedEtablissementId } = require('../utils/scope');
 
 const classeController = {
   /**
@@ -13,7 +14,7 @@ const classeController = {
       const { page = 1, limit = 10, niveau, statut, search } = req.query;
       const offset = (page - 1) * limit;
 
-      const whereClause = { etablissement_id: req.utilisateur.etablissement_id };
+      const whereClause = applyEtablissementScope(req, {});
       
       if (niveau) {
         whereClause.niveau = niveau;
@@ -69,10 +70,7 @@ const classeController = {
       const { id } = req.params;
 
       const classe = await Classe.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [
           {
             association: 'etablissement',
@@ -148,6 +146,15 @@ const classeController = {
         etablissement_id
       } = req.body;
 
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
+      if (!scopedEtablissementId) {
+        return res.status(400).json({
+          error: 'Établissement requis pour créer une classe',
+          code: 'ESTABLISSEMENT_REQUIRED'
+        });
+      }
+
       const classe = await Classe.create({
         nom_classe,
         niveau,
@@ -156,7 +163,22 @@ const classeController = {
         annee_scolaire,
         salle_principale,
         statut: statut || StatutClasse.ACTIVE,
-        etablissement_id: etablissement_id || req.utilisateur.etablissement_id
+        etablissement_id: etablissement_id || scopedEtablissementId
+      });
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'classes',
+        id_entite_concernee: classe.id,
+        type_operation: TypeOperation.CREATION,
+        valeur_avant: null,
+        valeur_apres: {
+          nom_classe,
+          niveau,
+          filiere,
+          etablissement_id: classe.etablissement_id
+        },
+        adresse_ip: req.ip
       });
 
       res.status(201).json({
@@ -192,10 +214,7 @@ const classeController = {
       const updates = req.body;
 
       const classe = await Classe.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!classe) {
@@ -206,6 +225,16 @@ const classeController = {
       }
 
       await classe.update(updates);
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'classes',
+        id_entite_concernee: classe.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: { id: classe.id },
+        valeur_apres: updates,
+        adresse_ip: req.ip
+      });
 
       res.json({
         message: 'Classe mise à jour avec succès',
@@ -230,10 +259,7 @@ const classeController = {
       const { id } = req.params;
 
       const classe = await Classe.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!classe) {
@@ -244,6 +270,16 @@ const classeController = {
       }
 
       await classe.archiver();
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'classes',
+        id_entite_concernee: classe.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: { statut: classe.statut },
+        valeur_apres: { statut: StatutClasse.ARCHIVEE },
+        adresse_ip: req.ip
+      });
 
       res.json({
         message: 'Classe archivée avec succès',
@@ -268,10 +304,7 @@ const classeController = {
       const { id } = req.params;
 
       const classe = await Classe.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!classe) {
@@ -282,6 +315,16 @@ const classeController = {
       }
 
       await classe.activer();
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'classes',
+        id_entite_concernee: classe.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: { statut: classe.statut },
+        valeur_apres: { statut: StatutClasse.ACTIVE },
+        adresse_ip: req.ip
+      });
 
       res.json({
         message: 'Classe activée avec succès',

@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const rattrapageController = require('../controllers/rattrapageController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { rattrapageValidation, queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('rattrapages'));
 
 // Routes accessibles aux administrateurs, directeurs, responsables pédagogiques et enseignants
 const rolesAutorises = [
@@ -25,7 +26,8 @@ router.get('/',
 );
 
 router.post('/', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   rattrapageValidation.create,
   handleValidationErrors,
   rattrapageController.createRattrapage
@@ -38,19 +40,22 @@ router.get('/:id',
 
 // Routes accessibles aux rôles autorisés seulement
 router.post('/:id/schedule', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   rattrapageValidation.planifier,
   handleValidationErrors,
   rattrapageController.planifierRattrapage
 );
 
 router.post('/:id/complete', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   rattrapageController.marquerRealise
 );
 
 router.post('/:id/cancel', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   rattrapageController.annulerRattrapage
 );
 

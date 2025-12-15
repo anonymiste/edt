@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const etablissementController = require('../controllers/etablissementController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { etablissementValidation, queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('etablissements'));
 
 // Routes accessibles aux administrateurs seulement
 router.get('/', 
@@ -18,7 +19,8 @@ router.get('/',
 );
 
 router.post('/', 
-  requireRole([RoleUtilisateur.ADMIN]), 
+  requireRole([RoleUtilisateur.ADMIN]),
+  requireEtablissementAccessCode,
   etablissementValidation.create,
   handleValidationErrors,
   etablissementController.createEtablissement
@@ -33,7 +35,8 @@ router.get('/:id',
 );
 
 router.put('/:id', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]), 
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
+  requireEtablissementAccessCode,
   etablissementValidation.update,
   handleValidationErrors,
   etablissementController.updateEtablissement
@@ -47,7 +50,8 @@ router.get('/:id/stats',
 );
 
 router.post('/:id/generate-access-code', 
-  requireRole([RoleUtilisateur.ADMIN]), 
+  requireRole([RoleUtilisateur.ADMIN]),
+  requireEtablissementAccessCode,
   etablissementValidation.idParam,
   handleValidationErrors,
   etablissementController.generateNewAccessCode

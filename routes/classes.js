@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const classeController = require('../controllers/classeController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { classeValidation, queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('classes'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [
@@ -24,7 +25,8 @@ router.get('/',
 );
 
 router.post('/', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   classeValidation.create,
   handleValidationErrors,
   classeController.createClasse
@@ -41,21 +43,24 @@ router.get('/:id/stats',
 
 // Routes accessibles aux rôles autorisés seulement
 router.put('/:id', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   classeValidation.update,
   handleValidationErrors,
   classeController.updateClasse
 );
 
 router.post('/:id/archive', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   classeValidation.idParam,
   handleValidationErrors,
   classeController.archiveClasse
 );
 
 router.post('/:id/activate', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   classeValidation.idParam,
   handleValidationErrors,
   classeController.activateClasse

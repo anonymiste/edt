@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const coursController = require('../controllers/coursController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('cours'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [
@@ -24,7 +25,8 @@ router.get('/',
 );
 
 router.post('/', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   coursController.createCours
 );
 
@@ -43,7 +45,8 @@ router.get('/:id/stats',
 
 // Routes accessibles aux rôles autorisés seulement
 router.put('/:id', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   coursController.updateCours
 );
 

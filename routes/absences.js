@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const absenceController = require('../controllers/absenceController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireRoleOrSelfEnseignant, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('absences'));
 
 // Routes accessibles aux administrateurs, directeurs, responsables pédagogiques et enseignants
 const rolesAutorises = [
@@ -25,23 +26,27 @@ router.get('/',
 );
 
 router.post('/', 
-  requireRole(rolesAutorises), 
+  requireRole(rolesAutorises),
+  requireEtablissementAccessCode,
   absenceController.declarerAbsence
 );
 
 // Routes accessibles à tous les utilisateurs authentifiés de l'établissement
 router.get('/:id', 
+  requireRoleOrSelfEnseignant(rolesAutorises),
   absenceController.getAbsenceById
 );
 
 // Routes accessibles aux rôles autorisés seulement
 router.post('/:id/validate', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]), 
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]),
+  requireEtablissementAccessCode,
   absenceController.validerAbsence
 );
 
 router.post('/:id/refuse', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]), 
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]),
+  requireEtablissementAccessCode,
   absenceController.refuserAbsence
 );
 

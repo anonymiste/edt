@@ -3,6 +3,7 @@ const { Cours, Classe, Matiere, Enseignant, Salle, CreneauCours } = require('../
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { TypeCours, TypeOperation } = require('../utils/enums');
+const { resolveScopedEtablissementId } = require('../utils/scope');
 
 const coursController = {
   /**
@@ -15,11 +16,13 @@ const coursController = {
 
       const whereClause = {};
       
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
       // Filtrer par établissement via les relations
       const includeClause = [
         {
           association: 'classe',
-          where: { etablissement_id: req.utilisateur.etablissement_id },
+          where: { etablissement_id: scopedEtablissementId },
           attributes: ['id', 'nom_classe']
         },
         {
@@ -90,12 +93,14 @@ const coursController = {
     try {
       const { id } = req.params;
 
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
       const cours = await Cours.findOne({
         where: { id },
         include: [
           {
             association: 'classe',
-            where: { etablissement_id: req.utilisateur.etablissement_id },
+            where: { etablissement_id: scopedEtablissementId },
             attributes: ['id', 'nom_classe', 'niveau', 'effectif']
           },
           {
@@ -181,10 +186,12 @@ const coursController = {
       } = req.body;
 
       // Vérifier que la classe appartient à l'établissement
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
       const classe = await Classe.findOne({
         where: { 
           id: classe_id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: scopedEtablissementId 
         }
       });
 
@@ -199,7 +206,7 @@ const coursController = {
       const matiere = await Matiere.findOne({
         where: { 
           id: matiere_id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: scopedEtablissementId 
         }
       });
 
@@ -214,7 +221,7 @@ const coursController = {
       const enseignant = await Enseignant.findOne({
         where: { 
           id: enseignant_id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: scopedEtablissementId 
         }
       });
 
@@ -230,7 +237,7 @@ const coursController = {
         const salle = await Salle.findOne({
           where: { 
             id: salle_id,
-            etablissement_id: req.utilisateur.etablissement_id 
+            etablissement_id: scopedEtablissementId 
           }
         });
 

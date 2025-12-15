@@ -1,6 +1,6 @@
 // controllers/notificationController.js
 const NotificationService = require('../services/notificationService');
-const { Notification } = require('../database/models');
+const { Notification, Utilisateur } = require('../database/models');
 const { bodyValidation, queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur, TypeNotification, CanalNotification, PrioriteNotification } = require('../utils/enums');
 
@@ -87,6 +87,22 @@ class NotificationController {
   static async createNotification(req, res) {
     try {
       const { utilisateur_id, type, titre, message, lien_action, canal, priorite } = req.body;
+
+      // Vérifier que la cible appartient au même établissement (sauf admin système)
+      const cible = await Utilisateur.findByPk(utilisateur_id);
+      if (!cible) {
+        return res.status(404).json({
+          success: false,
+          message: 'Utilisateur cible non trouvé'
+        });
+      }
+
+      if (req.utilisateur.role !== RoleUtilisateur.ADMIN && cible.etablissement_id !== req.utilisateur.etablissement_id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Vous ne pouvez envoyer des notifications qu\'aux utilisateurs de votre établissement'
+        });
+      }
 
       const notification = await NotificationService.creerNotification({
         utilisateur_id,

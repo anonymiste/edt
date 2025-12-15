@@ -3,6 +3,7 @@ const { Rattrapage, Cours, CreneauCours, Enseignant } = require('../database/mod
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { TypeRattrapage, StatutRattrapage, TypeOperation } = require('../utils/enums');
+const { resolveScopedEtablissementId } = require('../utils/scope');
 
 const rattrapageController = {
   /**
@@ -15,13 +16,15 @@ const rattrapageController = {
 
       const whereClause = {};
       
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
       // Filtrer par établissement via les relations
       const includeClause = [
         {
           association: 'cours',
           include: [{
             association: 'classe',
-            where: { etablissement_id: req.utilisateur.etablissement_id },
+            where: { etablissement_id: scopedEtablissementId },
             attributes: ['id', 'nom_classe']
           }]
         }
@@ -77,6 +80,8 @@ const rattrapageController = {
     try {
       const { id } = req.params;
 
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
       const rattrapage = await Rattrapage.findOne({
         where: { id },
         include: [
@@ -85,7 +90,7 @@ const rattrapageController = {
             include: [
               {
                 association: 'classe',
-                where: { etablissement_id: req.utilisateur.etablissement_id },
+                where: { etablissement_id: scopedEtablissementId },
                 attributes: ['id', 'nom_classe', 'niveau']
               },
               {
@@ -163,11 +168,13 @@ const rattrapageController = {
       } = req.body;
 
       // Vérifier que le cours appartient à l'établissement
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+
       const cours = await Cours.findOne({
         where: { id: cours_id },
         include: [{
           association: 'classe',
-          where: { etablissement_id: req.utilisateur.etablissement_id }
+          where: { etablissement_id: scopedEtablissementId }
         }]
       });
 

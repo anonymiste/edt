@@ -1,8 +1,31 @@
 // controllers/enseignantController.js
-const { Enseignant, Utilisateur, Etablissement, Cours, Disponibilite, Matiere } = require('../database/models');
+const { Enseignant, Utilisateur, Cours, Disponibilite, Matiere, CreneauCours, LogModification } = require('../database/models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
-const { StatutProfessionnel, PreferenceHoraire, TypeOperation } = require('../utils/enums');
+const { StatutProfessionnel, PreferenceHoraire, TypeOperation, RoleUtilisateur } = require('../utils/enums');
+
+const isAdminSystem = (utilisateur = {}) => utilisateur.role === RoleUtilisateur.ADMIN;
+
+const resolveScopedEtablissementId = (req) => {
+  const fromQuery = req.query?.etablissement_id;
+  const fromBody = req.body?.etablissement_id;
+  if (isAdminSystem(req.utilisateur)) {
+    return fromQuery || fromBody || req.utilisateur?.etablissement_id || null;
+  }
+  return req.utilisateur?.etablissement_id || null;
+};
+
+const applyEtablissementScope = (req, baseWhere = {}) => {
+  const scopedId = resolveScopedEtablissementId(req);
+  if (!isAdminSystem(req.utilisateur)) {
+    return { ...baseWhere, etablissement_id: scopedId };
+  }
+  // Admin système : scoper si un id est fourni, sinon global
+  if (scopedId) {
+    return { ...baseWhere, etablissement_id: scopedId };
+  }
+  return baseWhere;
+};
 
 const enseignantController = {
   /**
@@ -12,8 +35,15 @@ const enseignantController = {
     try {
       const { page = 1, limit = 10, statut, search } = req.query;
       const offset = (page - 1) * limit;
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
 
-      const whereClause = { etablissement_id: req.utilisateur.etablissement_id };
+      if (!isAdminSystem(req.utilisateur) && !scopedEtablissementId) {
+        return res.status(403).json({
+          error: 'Établissement requis pour lister les enseignants',
+          code: 'ESTABLISSEMENT_SCOPE_REQUIRED'
+        });
+      }
+      const whereClause = applyEtablissementScope(req, {});
       
       if (statut) {
         whereClause.statut = statut;
@@ -72,10 +102,7 @@ const enseignantController = {
       const { id } = req.params;
 
       const enseignant = await Enseignant.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [
           {
             association: 'utilisateur',
@@ -156,14 +183,31 @@ const enseignantController = {
         heures_max_journalieres,
         cours_consecutifs_max,
         preference_horaire,
-        multi_sites
+        multi_sites,
+        etablissement_id: etablissementIdBody
       } = req.body;
 
-      // Vérifier si le matricule existe déjà
+      const targetEtablissementId = resolveScopedEtablissementId(req) || etablissementIdBody;
+
+      if (!targetEtablissementId && !isAdminSystem(req.utilisateur)) {
+        return res.status(400).json({
+          error: 'Établissement requis pour créer un enseignant',
+          code: 'ESTABLISSEMENT_REQUIRED'
+        });
+      }
+
+      if (!targetEtablissementId) {
+        return res.status(400).json({
+          error: 'Établissement cible manquant',
+          code: 'ESTABLISSEMENT_REQUIRED'
+        });
+      }
+
+      // Vérifier si le matricule existe déjà dans l'établissement ciblé
       const existingEnseignant = await Enseignant.findOne({ 
         where: { 
           matricule,
-          etablissement_id: req.utilisateur.etablissement_id
+          ...(targetEtablissementId ? { etablissement_id: targetEtablissementId } : {})
         } 
       });
 
@@ -178,7 +222,7 @@ const enseignantController = {
       const utilisateur = await Utilisateur.findOne({
         where: { 
           id: utilisateur_id,
-          etablissement_id: req.utilisateur.etablissement_id
+          ...(targetEtablissementId ? { etablissement_id: targetEtablissementId } : {})
         }
       });
 
@@ -199,7 +243,22 @@ const enseignantController = {
         cours_consecutifs_max: cours_consecutifs_max || 4,
         preference_horaire: preference_horaire || PreferenceHoraire.INDIFFERENT,
         multi_sites: multi_sites || false,
-        etablissement_id: req.utilisateur.etablissement_id
+        etablissement_id: targetEtablissementId
+      });
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'enseignants',
+        id_entite_concernee: enseignant.id,
+        type_operation: TypeOperation.CREATION,
+        valeur_avant: null,
+        valeur_apres: {
+          utilisateur_id,
+          matricule,
+          statut,
+          etablissement_id: targetEtablissementId
+        },
+        adresse_ip: req.ip
       });
 
       res.status(201).json({
@@ -235,10 +294,7 @@ const enseignantController = {
       const updates = req.body;
 
       const enseignant = await Enseignant.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!enseignant) {
@@ -253,7 +309,7 @@ const enseignantController = {
         const existingEnseignant = await Enseignant.findOne({ 
           where: { 
             matricule: updates.matricule,
-            etablissement_id: req.utilisateur.etablissement_id,
+            etablissement_id: enseignant.etablissement_id,
             id: { [Op.ne]: id }
           } 
         });
@@ -267,6 +323,16 @@ const enseignantController = {
       }
 
       await enseignant.update(updates);
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'enseignants',
+        id_entite_concernee: enseignant.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: { id: enseignant.id },
+        valeur_apres: updates,
+        adresse_ip: req.ip
+      });
 
       res.json({
         message: 'Enseignant mis à jour avec succès',
@@ -292,10 +358,7 @@ const enseignantController = {
       const { matiere_ids } = req.body;
 
       const enseignant = await Enseignant.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!enseignant) {
@@ -309,7 +372,7 @@ const enseignantController = {
       const matieres = await Matiere.findAll({
         where: { 
           id: matiere_ids,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: enseignant.etablissement_id 
         }
       });
 
@@ -321,6 +384,16 @@ const enseignantController = {
       }
 
       await enseignant.setMatieres(matieres);
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'enseignants_matieres',
+        id_entite_concernee: enseignant.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: null,
+        valeur_apres: { matiere_ids },
+        adresse_ip: req.ip
+      });
 
       res.json({
         message: 'Matières associées à l\'enseignant avec succès',
@@ -345,10 +418,11 @@ const enseignantController = {
       const { date_debut, date_fin } = req.query;
 
       const enseignant = await Enseignant.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id }),
+        include: [{
+          association: 'utilisateur',
+          attributes: ['prenom', 'nom']
+        }]
       });
 
       if (!enseignant) {
@@ -425,10 +499,7 @@ const enseignantController = {
       const { id } = req.params;
 
       const enseignant = await Enseignant.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [{
           association: 'utilisateur',
           attributes: ['nom', 'prenom']
@@ -480,6 +551,165 @@ const enseignantController = {
       res.status(500).json({
         error: 'Erreur lors de la récupération des statistiques',
         code: 'RECUPERATION_TEACHER_STATS_ERROR'
+      });
+    }
+  },
+    /**
+   * Obtenir les disponibilités d'un enseignant
+   */
+  getDisponibilites: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const enseignant = await Enseignant.findOne({
+        where: applyEtablissementScope(req, { id })
+      });
+
+      if (!enseignant) {
+        return res.status(404).json({
+          error: 'Enseignant non trouvé',
+          code: 'TEACHER_NOT_FOUND'
+        });
+      }
+
+      const disponibilites = await Disponibilite.findAll({
+        where: { enseignant_id: id },
+        order: [
+          ['jour_semaine', 'ASC'],
+          ['heure_debut', 'ASC']
+        ]
+      });
+
+      res.json({
+        disponibilites,
+        code: 'DISPONIBILITES_RETRIEVED'
+      });
+
+    } catch (error) {
+      console.error('Erreur récupération disponibilités:', error);
+      res.status(500).json({
+        error: 'Erreur lors de la récupération des disponibilités',
+        code: 'DISPONIBILITES_RETRIEVAL_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Créer une disponibilité pour un enseignant
+   */
+  createDisponibilite: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { jour_semaine, heure_debut, heure_fin, type, recurrent } = req.body;
+
+      const enseignant = await Enseignant.findOne({
+        where: applyEtablissementScope(req, { id })
+      });
+
+      if (!enseignant) {
+        return res.status(404).json({
+          error: 'Enseignant non trouvé',
+          code: 'TEACHER_NOT_FOUND'
+        });
+      }
+
+      // Vérifier les chevauchements
+      const conflit = await Disponibilite.findOne({
+        where: {
+          enseignant_id: id,
+          jour_semaine,
+          [Op.or]: [
+            {
+              heure_debut: { [Op.between]: [heure_debut, heure_fin] }
+            },
+            {
+              heure_fin: { [Op.between]: [heure_debut, heure_fin] }
+            },
+            {
+              [Op.and]: [
+                { heure_debut: { [Op.lte]: heure_debut } },
+                { heure_fin: { [Op.gte]: heure_fin } }
+              ]
+            }
+          ]
+        }
+      });
+
+      if (conflit) {
+        return res.status(409).json({
+          error: 'Une disponibilité existe déjà sur cette plage horaire',
+          code: 'DISPONIBILITE_CONFLICT'
+        });
+      }
+
+      const disponibilite = await Disponibilite.create({
+        enseignant_id: id,
+        jour_semaine,
+        heure_debut,
+        heure_fin,
+        type: type || 'disponible',
+        recurrent: recurrent || false
+      });
+
+      res.status(201).json({
+        message: 'Disponibilité créée avec succès',
+        disponibilite,
+        code: 'DISPONIBILITE_CREATED'
+      });
+
+    } catch (error) {
+      console.error('Erreur création disponibilité:', error);
+      res.status(500).json({
+        error: 'Erreur lors de la création de la disponibilité',
+        code: 'DISPONIBILITE_CREATION_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Supprimer une disponibilité
+   */
+  deleteDisponibilite: async (req, res) => {
+    try {
+      const { id, disponibiliteId } = req.params;
+
+      const enseignant = await Enseignant.findOne({
+        where: applyEtablissementScope(req, { id })
+      });
+
+      if (!enseignant) {
+        return res.status(404).json({
+          error: 'Enseignant non trouvé',
+          code: 'TEACHER_NOT_FOUND'
+        });
+      }
+
+      const disponibilite = await Disponibilite.findOne({
+        where: {
+          id: disponibiliteId,
+          enseignant_id: id
+        }
+      });
+
+      if (!disponibilite) {
+        return res.status(404).json({
+          error: 'Disponibilité non trouvée',
+          code: 'DISPONIBILITE_NOT_FOUND'
+        });
+      }
+
+      await disponibilite.destroy();
+
+      res.json({
+        message: 'Disponibilité supprimée avec succès',
+        code: 'DISPONIBILITE_DELETED'
+      });
+
+    } catch (error) {
+      console.error('Erreur suppression disponibilité:', error);
+      res.status(500).json({
+        error: 'Erreur lors de la suppression de la disponibilité',
+        code: 'DISPONIBILITE_DELETION_ERROR'
       });
     }
   }

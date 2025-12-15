@@ -53,6 +53,14 @@ const absenceRoutes = require('./routes/absences');
 const statistiqueRoutes = require('./routes/statistiques');
 const notificationRoutes = require('./routes/notifications');
 
+const { logAccess } = require('./middleware/auth');
+
+// Logging applicatif global (après parsing et avant routes)
+app.use((req, res, next) => {
+  // on logge tout ; action générique "global"
+  return logAccess('global')(req, res, next);
+});
+
 // Routes API
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

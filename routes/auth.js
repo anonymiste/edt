@@ -3,9 +3,10 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { authValidation, handleValidationErrors } = require('../middleware/validation');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, logAccess } = require('../middleware/auth');
 
 // Routes publiques
+router.use(logAccess('auth'));
 router.post('/register', 
   authValidation.register, 
   handleValidationErrors, 

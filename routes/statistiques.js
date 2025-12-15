@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const statistiqueController = require('../controllers/statistiqueController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, logAccess } = require('../middleware/auth');
 const { queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('statistiques'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [

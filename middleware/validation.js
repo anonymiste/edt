@@ -125,17 +125,17 @@ const queryValidation = {
   mongoId: (field) => query(field).optional().isMongoId().withMessage(`${field} doit être un ID MongoDB valide`),
   float: (field) => query(field).optional().isFloat().withMessage(`${field} doit être un nombre décimal`).toFloat(),
   enum: (values) => (field) => query(field).optional().isIn(values).withMessage(`${field} doit être l'une des valeurs suivantes: ${values.join(', ')}`),
-  
+
   // Validations spécifiques
   page: query('page').optional().isInt({ min: 1 }).withMessage('Le numéro de page doit être un entier positif').toInt(),
   limit: query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('La limite doit être entre 1 et 100').toInt(),
-  
+
   // Validations composées
   pagination: [
     query('page').optional().isInt({ min: 1 }).withMessage('Le numéro de page doit être un entier positif').toInt(),
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('La limite doit être entre 1 et 100').toInt()
   ],
-  
+
   dateRange: [
     query('date_debut').optional().isISO8601().withMessage('Date de début invalide'),
     query('date_fin').optional().isISO8601().withMessage('Date de fin invalide')
@@ -614,6 +614,11 @@ const emploiTempsValidation = {
       .isUUID()
       .withMessage('ID classe invalide'),
 
+    body('nom_version')
+      .notEmpty().withMessage('Le nom de la version est requis')
+      .isLength({ min: 1, max: 255 }).withMessage('Le nom doit contenir entre 1 et 255 caractères')
+      .trim(),
+
     body('periode_debut')
       .isDate()
       .withMessage('Date de début invalide'),
@@ -636,7 +641,12 @@ const emploiTempsValidation = {
     body('parametres_generation')
       .optional()
       .isObject()
-      .withMessage('Les paramètres de génération doivent être un objet JSON')
+      .withMessage('Les paramètres de génération doivent être un objet JSON'),
+
+    body('nom_version')
+      .notEmpty().withMessage('Le nom de la version est requis')
+      .isLength({ min: 1, max: 255 }).withMessage('Le nom doit contenir entre 1 et 255 caractères')
+      .trim(),
   ],
 
   valider: [
@@ -651,6 +661,66 @@ const emploiTempsValidation = {
     param('id')
       .isUUID()
       .withMessage('ID emploi du temps invalide')
+  ],
+  seance: [
+    body('emploi_temps_id')
+      .optional()
+      .isUUID().withMessage('L\'ID de l\'emploi du temps doit être un UUID valide'),
+
+    body('cours_id')
+      .notEmpty().withMessage('L\'ID du cours est requis')
+      .isUUID().withMessage('L\'ID du cours doit être un UUID valide'),
+
+    body('salle_id')
+      .optional({ nullable: true })
+      .isUUID().withMessage('L\'ID de la salle doit être un UUID valide'),
+
+    body('jour_semaine')
+      .notEmpty().withMessage('Le jour de la semaine est requis')
+      .isIn(['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'])
+      .withMessage('Jour de la semaine invalide'),
+
+    body('heure_debut')
+      .notEmpty().withMessage('L\'heure de début est requise')
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .withMessage('L\'heure de début doit être au format HH:MM'),
+
+    body('heure_fin')
+      .notEmpty().withMessage('L\'heure de fin est requise')
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .withMessage('L\'heure de fin doit être au format HH:MM')
+      .custom((value, { req }) => {
+        if (value <= req.body.heure_debut) {
+          throw new Error('L\'heure de fin doit être après l\'heure de début');
+        }
+        return true;
+      }),
+
+    body('date_debut_validite')
+      .optional({ nullable: true })
+      .isISO8601().withMessage('La date de début de validité doit être au format ISO8601'),
+
+    body('date_fin_validite')
+      .optional({ nullable: true })
+      .isISO8601().withMessage('La date de fin de validité doit être au format ISO8601')
+      .custom((value, { req }) => {
+        if (value && req.body.date_debut_validite && new Date(value) < new Date(req.body.date_debut_validite)) {
+          throw new Error('La date de fin de validité doit être après la date de début de validité');
+        }
+        return true;
+      }),
+
+    body('est_rattrapage')
+      .optional()
+      .isBoolean().withMessage('Le champ est_rattrapage doit être un booléen')
+  ],
+
+  annulation: [
+    body('motif')
+      .notEmpty().withMessage('Le motif d\'annulation est requis')
+      .isLength({ min: 10, max: 500 })
+      .withMessage('Le motif doit contenir entre 10 et 500 caractères')
+      .trim()
   ]
 };
 
@@ -909,12 +979,12 @@ const createCustomValidation = (schema) => {
 module.exports = {
   // Middleware principal
   handleValidationErrors,
-  
+
   // Validations génériques
   bodyValidation,
   queryValidation,
   paramValidation,
-  
+
   // Validations spécifiques par module
   authValidation,
   etablissementValidation,
@@ -927,7 +997,7 @@ module.exports = {
   notificationValidation,
   contrainteValidation,
   exportValidation,
-  
+
   // Utilitaires
   validateFile,
   createCustomValidation

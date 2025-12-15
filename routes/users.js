@@ -2,12 +2,13 @@
 const express = require('express');
 const UserRouter = express.Router();
 const userController = require('../controllers/userController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireEtablissementAccessCode, logAccess } = require('../middleware/auth');
 const { queryValidation, handleValidationErrors } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 UserRouter.use(authenticateToken);
+UserRouter.use(logAccess('users'));
 
 // Routes accessibles aux administrateurs et directeurs
 UserRouter.get('/', 
@@ -23,7 +24,8 @@ UserRouter.get('/stats',
 );
 
 UserRouter.post('/', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]), 
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
+  requireEtablissementAccessCode,
   userController.createUser
 );
 
@@ -33,12 +35,14 @@ UserRouter.get('/:id',
 );
 
 UserRouter.put('/:id', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]), 
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
+  requireEtablissementAccessCode,
   userController.updateUser
 );
 
 UserRouter.delete('/:id', 
-  requireRole([RoleUtilisateur.ADMIN]), 
+  requireRole([RoleUtilisateur.ADMIN]),
+  requireEtablissementAccessCode,
   userController.deleteUser
 );
 

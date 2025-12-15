@@ -3,6 +3,7 @@ const { Utilisateur, Etablissement, LogConnexion, LogModification } = require('.
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { RoleUtilisateur, TypeOperation } = require('../utils/enums');
+const { applyEtablissementScope, resolveScopedEtablissementId, isAdminSystem } = require('../utils/scope');
 
 const userController = {
   /**
@@ -13,7 +14,8 @@ const userController = {
       const { page = 1, limit = 10, role, search } = req.query;
       const offset = (page - 1) * limit;
 
-      const whereClause = { etablissement_id: req.utilisateur.etablissement_id };
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+      const whereClause = applyEtablissementScope(req, {});
       
       if (role) {
         whereClause.role = role;
@@ -67,10 +69,7 @@ const userController = {
       const { id } = req.params;
 
       const utilisateur = await Utilisateur.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         attributes: { exclude: ['mot_de_passe_hash', 'deux_fa_secret'] },
         include: [{
           association: 'etablissement',
@@ -130,6 +129,15 @@ const userController = {
       const motDePasseHash = await bcrypt.hash(password, saltRounds);
 
       // Créer l'utilisateur
+      const targetEtablissementId = resolveScopedEtablissementId(req);
+
+      if (!targetEtablissementId) {
+        return res.status(400).json({
+          error: 'Établissement requis pour créer un utilisateur',
+          code: 'ESTABLISSEMENT_REQUIRED'
+        });
+      }
+
       const utilisateur = await Utilisateur.create({
         email,
         mot_de_passe_hash: motDePasseHash,
@@ -137,7 +145,7 @@ const userController = {
         prenom,
         role,
         telephone,
-        etablissement_id: req.utilisateur.etablissement_id
+        etablissement_id: targetEtablissementId
       });
 
       // Journaliser la création
@@ -191,10 +199,7 @@ const userController = {
       const { nom, prenom, role, telephone, actif } = req.body;
 
       const utilisateur = await Utilisateur.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!utilisateur) {

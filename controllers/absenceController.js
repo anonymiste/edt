@@ -1,8 +1,25 @@
 // controllers/absenceController.js
-const { Absence, Enseignant, Cours, Utilisateur } = require('../database/models');
+const { Absence, Enseignant, Cours, Utilisateur, LogModification } = require('../database/models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { StatutAbsence, TypeOperation } = require('../utils/enums');
+const { resolveScopedEtablissementId } = require('../utils/scope');
+
+const resolveEnseignantIdFromUser = async (utilisateur) => {
+  if (!utilisateur || utilisateur.role !== 'enseignant') return null;
+  if (utilisateur.enseignant_id) return utilisateur.enseignant_id;
+
+  const enseignant = await Enseignant.findOne({
+    where: { utilisateur_id: utilisateur.id },
+    attributes: ['id']
+  });
+
+  if (enseignant) {
+    utilisateur.enseignant_id = enseignant.id;
+    return enseignant.id;
+  }
+  return null;
+};
 
 const absenceController = {
   /**
@@ -15,11 +32,14 @@ const absenceController = {
 
       const whereClause = {};
       
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+      const selfEnseignantId = await resolveEnseignantIdFromUser(req.utilisateur);
+
       // Filtrer par établissement via les relations
       const includeClause = [
         {
           association: 'enseignant',
-          where: { etablissement_id: req.utilisateur.etablissement_id },
+          where: { etablissement_id: scopedEtablissementId },
           include: [{
             association: 'utilisateur',
             attributes: ['id', 'nom', 'prenom']
@@ -27,7 +47,9 @@ const absenceController = {
         }
       ];
 
-      if (enseignant_id) {
+      if (selfEnseignantId) {
+        whereClause.enseignant_id = selfEnseignantId;
+      } else if (enseignant_id) {
         whereClause.enseignant_id = enseignant_id;
       }
 
@@ -77,12 +99,15 @@ const absenceController = {
     try {
       const { id } = req.params;
 
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+      const selfEnseignantId = await resolveEnseignantIdFromUser(req.utilisateur);
+
       const absence = await Absence.findOne({
         where: { id },
         include: [
           {
             association: 'enseignant',
-            where: { etablissement_id: req.utilisateur.etablissement_id },
+            where: { etablissement_id: scopedEtablissementId },
             include: [{
               association: 'utilisateur',
               attributes: ['id', 'nom', 'prenom', 'email', 'telephone']
@@ -108,6 +133,13 @@ const absenceController = {
         return res.status(404).json({
           error: 'Absence non trouvée',
           code: 'ABSENCE_NOT_FOUND'
+        });
+      }
+
+      if (selfEnseignantId && absence.enseignant_id !== selfEnseignantId) {
+        return res.status(403).json({
+          error: 'Accès refusé à cette absence',
+          code: 'ABSENCE_FORBIDDEN'
         });
       }
 
@@ -150,10 +182,20 @@ const absenceController = {
       } = req.body;
 
       // Vérifier que l'enseignant appartient à l'établissement
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+      const selfEnseignantId = await resolveEnseignantIdFromUser(req.utilisateur);
+
+      if (selfEnseignantId && enseignant_id !== selfEnseignantId) {
+        return res.status(403).json({
+          error: 'Un enseignant ne peut déclarer que ses propres absences',
+          code: 'ABSENCE_SELF_ONLY'
+        });
+      }
+
       const enseignant = await Enseignant.findOne({
         where: { 
           id: enseignant_id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: scopedEtablissementId 
         }
       });
 
@@ -170,7 +212,7 @@ const absenceController = {
           where: { id: cours_id },
           include: [{
             association: 'classe',
-            where: { etablissement_id: req.utilisateur.etablissement_id }
+            where: { etablissement_id: scopedEtablissementId }
           }]
         });
 
@@ -191,6 +233,22 @@ const absenceController = {
         necessite_remplacement: necessite_remplacement || false,
         cours_concernes,
         statut: StatutAbsence.DECLAREE
+      });
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'absences',
+        id_entite_concernee: absence.id,
+        type_operation: TypeOperation.CREATION,
+        valeur_avant: null,
+        valeur_apres: {
+          enseignant_id,
+          cours_id,
+          date_debut,
+          date_fin,
+          motif
+        },
+        adresse_ip: req.ip
       });
 
       res.status(201).json({
@@ -232,6 +290,16 @@ const absenceController = {
 
       await absence.valider();
 
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'absences',
+        id_entite_concernee: absence.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: { statut: absence.statut },
+        valeur_apres: { statut: StatutAbsence.VALIDEE },
+        adresse_ip: req.ip
+      });
+
       res.json({
         message: 'Absence validée avec succès',
         absence,
@@ -271,6 +339,16 @@ const absenceController = {
       }
 
       await absence.refuser(raison);
+
+      await LogModification.create({
+        utilisateur_id: req.utilisateur.id,
+        table_concernee: 'absences',
+        id_entite_concernee: absence.id,
+        type_operation: TypeOperation.MODIFICATION,
+        valeur_avant: { statut: absence.statut },
+        valeur_apres: { statut: 'refusee', raison },
+        adresse_ip: req.ip
+      });
 
       res.json({
         message: 'Absence refusée avec succès',

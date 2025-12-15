@@ -2,12 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const notificationController = require('../controllers/notificationController');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, logAccess, requireEtablissementAccessCode } = require('../middleware/auth');
 const { bodyValidation, queryValidation, handleValidationErrors, notificationValidation } = require('../middleware/validation');
 const { RoleUtilisateur } = require('../utils/enums');
 
 // Toutes les routes nécessitent une authentification
 router.use(authenticateToken);
+router.use(logAccess('notifications'));
 
 // Routes pour tous les utilisateurs authentifiés
 router.get('/',
@@ -46,6 +47,7 @@ router.delete('/:id',
 // Routes réservées aux administrateurs et directeurs
 router.post('/',
   requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
+  requireEtablissementAccessCode,
   ...notificationValidation.create,
   handleValidationErrors,
   notificationController.createNotification
@@ -54,6 +56,7 @@ router.post('/',
 // Route réservée aux administrateurs pour le nettoyage
 router.post('/cleanup',
   requireRole([RoleUtilisateur.ADMIN]),
+  requireEtablissementAccessCode,
   ...notificationValidation.cleanup,
   handleValidationErrors,
   notificationController.cleanupOldNotifications

@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { Utilisateur, Etablissement } = require('../database/models');
+const { Utilisateur, Etablissement, Enseignant } = require('../database/models');
 const config = require('../config/config');
 const AuthService = require('../services/authService');
 const { RoleUtilisateur } = require('../utils/enums');
@@ -136,6 +136,139 @@ const requireRole = (roles) => {
 
     next();
   };
+};
+
+/**
+ * Résout et met en cache l'id enseignant associé à l'utilisateur connecté
+ */
+const resolveEnseignantId = async (utilisateur) => {
+  if (!utilisateur || utilisateur.role !== RoleUtilisateur.ENSEIGNANT) {
+    return null;
+  }
+
+  if (utilisateur.enseignant_id) {
+    return utilisateur.enseignant_id;
+  }
+
+  const enseignant = await Enseignant.findOne({
+    where: { utilisateur_id: utilisateur.id },
+    attributes: ['id']
+  });
+
+  if (enseignant) {
+    utilisateur.enseignant_id = enseignant.id;
+    return enseignant.id;
+  }
+
+  return null;
+};
+
+/**
+ * Autorise soit un rôle donné, soit un enseignant sur sa propre ressource
+ */
+const requireRoleOrSelfEnseignant = (roles = []) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.utilisateur) {
+        return res.status(401).json({ 
+          error: 'Authentification requise',
+          code: 'AUTH_REQUIRED'
+        });
+      }
+
+      // Rôle autorisé directement
+      if (roles.includes(req.utilisateur.role)) {
+        return next();
+      }
+
+      // Enseignant uniquement sur sa ressource
+      if (req.utilisateur.role === RoleUtilisateur.ENSEIGNANT) {
+        const enseignantId = await resolveEnseignantId(req.utilisateur);
+        if (enseignantId && enseignantId === req.params.id) {
+          return next();
+        }
+      }
+
+      return res.status(403).json({ 
+        error: 'Permissions insuffisantes',
+        required_roles: roles,
+        user_role: req.utilisateur.role,
+        self_allowed: true,
+        code: 'INSUFFICIENT_PERMISSIONS'
+      });
+    } catch (error) {
+      console.error('Erreur vérification rôle/ressource enseignant:', error);
+      return res.status(500).json({
+        error: 'Erreur de vérification des permissions',
+        code: 'ROLE_CHECK_ERROR'
+      });
+    }
+  };
+};
+
+/**
+ * Vérifie le code d'accès établissement pour les opérations d'écriture
+ * - Admin système bypass
+ * - Utilise l'établissement scoped (body/query/user)
+ * - Code attendu dans l'en-tête `x-etablissement-code`
+ */
+const requireEtablissementAccessCode = async (req, res, next) => {
+  try {
+    if (!req.utilisateur) {
+      return res.status(401).json({
+        error: 'Authentification requise',
+        code: 'AUTH_REQUIRED'
+      });
+    }
+
+    if (req.utilisateur.role === RoleUtilisateur.ADMIN) {
+      return next(); // Bypass admin système
+    }
+
+    const headerCode = req.headers['x-etablissement-code'] || req.headers['x-etablissement-access-code'];
+    if (!headerCode) {
+      return res.status(400).json({
+        error: 'Code d\'accès établissement requis',
+        code: 'ESTABLISHMENT_CODE_REQUIRED'
+      });
+    }
+
+    const targetEtablissementId = req.body?.etablissement_id || req.query?.etablissement_id || req.utilisateur.etablissement_id;
+    if (!targetEtablissementId) {
+      return res.status(400).json({
+        error: 'Établissement cible manquant',
+        code: 'ESTABLISHMENT_TARGET_REQUIRED'
+      });
+    }
+
+    const etablissement = await Etablissement.findOne({
+      where: { id: targetEtablissementId },
+      attributes: ['id', 'code_acces']
+    });
+
+    if (!etablissement) {
+      return res.status(404).json({
+        error: 'Établissement introuvable',
+        code: 'ESTABLISHMENT_NOT_FOUND'
+      });
+    }
+
+    if (etablissement.code_acces !== headerCode) {
+      return res.status(403).json({
+        error: 'Code d\'accès établissement invalide',
+        code: 'ESTABLISHMENT_CODE_INVALID'
+      });
+    }
+
+    // ok
+    return next();
+  } catch (error) {
+    console.error('Erreur vérification code établissement:', error);
+    return res.status(500).json({
+      error: 'Erreur lors de la vérification du code établissement',
+      code: 'ESTABLISHMENT_CODE_ERROR'
+    });
+  }
 };
 
 /**
@@ -385,5 +518,7 @@ module.exports = {
   requireOwnership,
   verify2FACode,
   generateTempToken,
-  logAccess
+  logAccess,
+  requireRoleOrSelfEnseignant,
+  requireEtablissementAccessCode
 };

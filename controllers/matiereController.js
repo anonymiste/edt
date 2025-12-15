@@ -3,6 +3,7 @@ const { Matiere, Etablissement, Cours, Enseignant } = require('../database/model
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { CategorieMatiere, TypeCours, TypeOperation } = require('../utils/enums');
+const { applyEtablissementScope, resolveScopedEtablissementId } = require('../utils/scope');
 
 const matiereController = {
   /**
@@ -13,7 +14,7 @@ const matiereController = {
       const { page = 1, limit = 10, categorie, type_cours, search } = req.query;
       const offset = (page - 1) * limit;
 
-      const whereClause = { etablissement_id: req.utilisateur.etablissement_id };
+      const whereClause = applyEtablissementScope(req, {});
       
       if (categorie) {
         whereClause.categorie = categorie;
@@ -69,10 +70,7 @@ const matiereController = {
       const { id } = req.params;
 
       const matiere = await Matiere.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [
           {
             association: 'etablissement',
@@ -153,12 +151,19 @@ const matiereController = {
         peut_etre_en_ligne
       } = req.body;
 
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+      if (!scopedEtablissementId) {
+        return res.status(400).json({
+          error: 'Établissement requis pour créer une matière',
+          code: 'ESTABLISSEMENT_REQUIRED'
+        });
+      }
+
       // Vérifier si le code matière existe déjà
       const existingMatiere = await Matiere.findOne({ 
-        where: { 
-          code_matiere: code_matiere.toUpperCase(),
-          etablissement_id: req.utilisateur.etablissement_id
-        } 
+        where: applyEtablissementScope(req, { 
+          code_matiere: code_matiere.toUpperCase()
+        }) 
       });
 
       if (existingMatiere) {
@@ -179,7 +184,7 @@ const matiereController = {
         volume_horaire_hebdo,
         necessite_equipement_special: necessite_equipement_special || false,
         peut_etre_en_ligne: peut_etre_en_ligne || false,
-        etablissement_id: req.utilisateur.etablissement_id
+        etablissement_id: scopedEtablissementId
       });
 
       res.status(201).json({
@@ -220,10 +225,7 @@ const matiereController = {
       }
 
       const matiere = await Matiere.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!matiere) {
@@ -238,7 +240,7 @@ const matiereController = {
         const existingMatiere = await Matiere.findOne({ 
           where: { 
             code_matiere: updates.code_matiere,
-            etablissement_id: req.utilisateur.etablissement_id,
+            etablissement_id: matiere.etablissement_id,
             id: { [Op.ne]: id }
           } 
         });
@@ -277,10 +279,7 @@ const matiereController = {
       const { enseignant_ids } = req.body;
 
       const matiere = await Matiere.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!matiere) {
@@ -294,7 +293,7 @@ const matiereController = {
       const enseignants = await Enseignant.findAll({
         where: { 
           id: enseignant_ids,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: matiere.etablissement_id 
         }
       });
 
@@ -329,10 +328,7 @@ const matiereController = {
       const { id } = req.params;
 
       const matiere = await Matiere.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!matiere) {

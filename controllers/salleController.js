@@ -3,6 +3,7 @@ const { Salle, Etablissement, Cours, CreneauCours } = require('../database/model
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { TypeSalle, StatutSalle, TypeOperation } = require('../utils/enums');
+const { applyEtablissementScope, resolveScopedEtablissementId } = require('../utils/scope');
 
 const salleController = {
   /**
@@ -13,7 +14,8 @@ const salleController = {
       const { page = 1, limit = 10, type_salle, statut, search } = req.query;
       const offset = (page - 1) * limit;
 
-      const whereClause = { etablissement_id: req.utilisateur.etablissement_id };
+      const scopedEtablissementId = resolveScopedEtablissementId(req);
+      const whereClause = applyEtablissementScope(req, {});
       
       if (type_salle) {
         whereClause.type_salle = type_salle;
@@ -69,10 +71,7 @@ const salleController = {
       const { id } = req.params;
 
       const salle = await Salle.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [
           {
             association: 'etablissement',
@@ -164,11 +163,7 @@ const salleController = {
 
       // Vérifier si la salle existe déjà dans le même bâtiment
       const existingSalle = await Salle.findOne({ 
-        where: { 
-          nom_salle,
-          batiment,
-          etablissement_id: req.utilisateur.etablissement_id
-        } 
+        where: applyEtablissementScope(req, { nom_salle, batiment }) 
       });
 
       if (existingSalle) {
@@ -187,7 +182,7 @@ const salleController = {
         surface,
         accessibilite_pmr: accessibilite_pmr || false,
         statut: statut || StatutSalle.DISPONIBLE,
-        etablissement_id: req.utilisateur.etablissement_id
+        etablissement_id: resolveScopedEtablissementId(req)
       });
 
       res.status(201).json({
