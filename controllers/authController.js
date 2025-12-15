@@ -161,7 +161,8 @@ const authController = {
       console.error('Erreur inscription:', error);
       res.status(500).json({
         error: 'Erreur lors de l\'inscription',
-        code: 'REGISTRATION_ERROR'
+        code: 'REGISTRATION_ERROR',
+        details: error?.message || String(error)
       });
     }
   },
@@ -419,14 +420,21 @@ const authController = {
   /**
    * Route pour activer la 2FA après vérification
    */
+  // controllers/authController.js - CORRECTION de la fonction activate2FA
   activate2FA: async (req, res) => {
     try {
-
       const { twoFAToken } = req.body;
-      const { userData } = req.body;
-      console.log(req.body)
-      const utilisateur = await Utilisateur.findByPk(userData.id);
-      console.log(utilisateur);
+
+      // ✅ CORRECTION : Utiliser req.utilisateur.id au lieu de userData.id
+      // req.utilisateur est injecté par le middleware authenticateToken
+      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
+
+      if (!utilisateur) {
+        return res.status(404).json({
+          error: 'Utilisateur non trouvé',
+          code: 'USER_NOT_FOUND'
+        });
+      }
 
       if (!utilisateur.deux_fa_secret) {
         return res.status(400).json({
@@ -466,7 +474,8 @@ const authController = {
       console.error('Erreur activation 2FA:', error);
       res.status(500).json({
         error: 'Erreur lors de l\'activation de la 2FA',
-        code: '2FA_ACTIVATION_ERROR'
+        code: '2FA_ACTIVATION_ERROR',
+        details: error.message
       });
     }
   },

@@ -480,27 +480,23 @@ const logAccess = (action) => {
   return async (req, res, next) => {
     const start = Date.now();
     
-    // Journaliser après la réponse
+    // Journaliser après la réponse (utiliser LogConnexion pour accès)
     res.on('finish', async () => {
       try {
-        const { LogModification } = require('../database/models');
+        const { LogConnexion } = require('../database/models');
+        const { StatutConnexion } = require('../utils/enums');
         const duration = Date.now() - start;
 
-        await LogModification.create({
-          utilisateur_id: req.utilisateur?.id,
-          table_concernee: 'api_access',
-          id_entite_concernee: req.params.id || 'general',
-          type_operation: 'consultation',
-          valeur_avant: null,
-          valeur_apres: {
-            action,
-            method: req.method,
-            path: req.path,
-            status_code: res.statusCode,
-            duration_ms: duration,
-            user_agent: req.get('User-Agent')
-          },
-          adresse_ip: req.ip || req.connection.remoteAddress
+        const statut = res.statusCode && res.statusCode < 400 ? StatutConnexion.SUCCES : StatutConnexion.ECHEC;
+
+        await LogConnexion.create({
+          utilisateur_id: req.utilisateur?.id || null,
+          adresse_ip: req.ip || req.connection.remoteAddress,
+          user_agent: req.get('User-Agent'),
+          statut,
+          mot_de_passe_tente: null,
+          pays: null,
+          ville: null
         });
       } catch (error) {
         console.error('Erreur journalisation accès:', error);
