@@ -120,7 +120,9 @@ const etablissementController = {
         site_web,
         fuseau_horaire,
         langue,
-        annee_scolaire_courante
+        annee_scolaire_courante,
+        statut,
+        logo_url
       } = req.body;
 
       const etablissement = await Etablissement.create({
@@ -134,7 +136,9 @@ const etablissementController = {
         site_web,
         fuseau_horaire: fuseau_horaire || 'TOGO/Lomé',
         langue: langue || 'fr',
-        annee_scolaire_courante
+        annee_scolaire_courante,
+        statut: statut || 'active',
+        logo_url
       });
 
       res.status(201).json({
@@ -167,7 +171,7 @@ const etablissementController = {
       }
 
       const { id } = req.params;
-      const updates = req.body;
+      let updates = req.body;
 
       const etablissement = await Etablissement.findByPk(id);
 
@@ -176,6 +180,11 @@ const etablissementController = {
           error: 'Établissement non trouvé',
           code: 'ETABLISSEMENT_NOT_FOUND'
         });
+      }
+
+      // Assurer que statut est toujours présent s'il est fourni
+      if (updates.statut === undefined) {
+        updates = { ...updates, statut: etablissement.statut };
       }
 
       await etablissement.update(updates);
