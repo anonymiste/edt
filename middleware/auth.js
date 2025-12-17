@@ -13,7 +13,7 @@ const authenticateToken = async (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Token d\'authentification requis',
         code: 'TOKEN_REQUIRED'
       });
@@ -21,11 +21,11 @@ const authenticateToken = async (req, res, next) => {
 
     // Vérifier le token JWT
     const decoded = jwt.verify(token, config.jwt.secret);
-    
+
     // Récupérer l'utilisateur depuis la base de données
     const utilisateur = await Utilisateur.findByPk(decoded.id, {
-      attributes: { 
-        exclude: ['mot_de_passe_hash'] 
+      attributes: {
+        exclude: ['mot_de_passe_hash']
       },
       include: [{
         association: 'etablissement',
@@ -34,14 +34,14 @@ const authenticateToken = async (req, res, next) => {
     });
 
     if (!utilisateur) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Utilisateur non trouvé',
         code: 'USER_NOT_FOUND'
       });
     }
 
     if (!utilisateur.actif) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Compte désactivé',
         code: 'ACCOUNT_DISABLED'
       });
@@ -49,7 +49,7 @@ const authenticateToken = async (req, res, next) => {
 
     // Vérifier si l'établissement est actif
     if (utilisateur.etablissement && utilisateur.etablissement.statut !== 'actif') {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Établissement non actif',
         code: 'ESTABLISHMENT_INACTIVE'
       });
@@ -63,8 +63,8 @@ const authenticateToken = async (req, res, next) => {
     ];
 
     // Vérifier si l'utilisateur nécessite la vérification 2FA
-    const requires2FA = rolesRequiring2FA.includes(utilisateur.role) && 
-                       utilisateur.deux_fa_active;
+    const requires2FA = rolesRequiring2FA.includes(utilisateur.role) &&
+      utilisateur.deux_fa_active;
 
     // Si la 2FA est requise, vérifier que le token contient le flag twoFAVerified
     if (requires2FA) {
@@ -74,9 +74,10 @@ const authenticateToken = async (req, res, next) => {
         '/auth/activate-2fa',
         '/auth/verify-2fa'
       ];
-      
-      const isExemptedRoute = exemptedRoutes.some(route => req.path.includes(route));
-      
+
+      const requestPath = req.originalUrl || req.path;
+      const isExemptedRoute = exemptedRoutes.some(route => requestPath.includes(route));
+
       if (!isExemptedRoute && !decoded.twoFAVerified) {
         return res.status(403).json({
           error: 'Authentification 2FA requise. Veuillez vérifier votre code 2FA.',
@@ -91,22 +92,22 @@ const authenticateToken = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Erreur authentification:', error);
-    
+
     if (error.name === 'JsonWebTokenError') {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Token invalide',
         code: 'TOKEN_INVALID'
       });
     }
-    
+
     if (error.name === 'TokenExpiredError') {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Token expiré',
         code: 'TOKEN_EXPIRED'
       });
     }
-    
-    return res.status(500).json({ 
+
+    return res.status(500).json({
       error: 'Erreur d\'authentification',
       code: 'AUTH_ERROR'
     });
@@ -119,14 +120,14 @@ const authenticateToken = async (req, res, next) => {
 const requireRole = (roles) => {
   return (req, res, next) => {
     if (!req.utilisateur) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Authentification requise',
         code: 'AUTH_REQUIRED'
       });
     }
 
     if (!roles.includes(req.utilisateur.role)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Permissions insuffisantes',
         required_roles: roles,
         user_role: req.utilisateur.role,
@@ -170,7 +171,7 @@ const requireRoleOrSelfEnseignant = (roles = []) => {
   return async (req, res, next) => {
     try {
       if (!req.utilisateur) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: 'Authentification requise',
           code: 'AUTH_REQUIRED'
         });
@@ -189,7 +190,7 @@ const requireRoleOrSelfEnseignant = (roles = []) => {
         }
       }
 
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Permissions insuffisantes',
         required_roles: roles,
         user_role: req.utilisateur.role,
@@ -326,7 +327,7 @@ const require2FAForRoles = (roles = []) => {
       next();
     } catch (error) {
       console.error('Erreur vérification 2FA:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Erreur de vérification 2FA',
         code: '2FA_VERIFICATION_ERROR'
       });
@@ -342,14 +343,14 @@ const generateTempToken = (req, res, next) => {
     // Ce middleware génère un token temporaire pour les utilisateurs
     // qui viennent de s'inscrire et doivent configurer la 2FA
     const { email, password } = req.body;
-    
+
     if (!email || !password) {
       return next();
     }
 
     // Générer un token temporaire sans 2FA pour permettre la configuration
     const tempToken = jwt.sign(
-      { 
+      {
         email,
         temp: true,
         twoFAVerified: false
@@ -374,9 +375,9 @@ const requireOwnership = (modelName, paramName = 'id') => {
     try {
       const { sequelize } = require('../database/models');
       const model = sequelize.models[modelName];
-      
+
       if (!model) {
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: 'Modèle non trouvé',
           code: 'MODEL_NOT_FOUND'
         });
@@ -386,7 +387,7 @@ const requireOwnership = (modelName, paramName = 'id') => {
       const resource = await model.findByPk(resourceId);
 
       if (!resource) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'Ressource non trouvée',
           code: 'RESOURCE_NOT_FOUND'
         });
@@ -407,7 +408,7 @@ const requireOwnership = (modelName, paramName = 'id') => {
       }
 
       if (!hasAccess && req.utilisateur.role !== 'admin') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Accès non autorisé à cette ressource',
           code: 'RESOURCE_ACCESS_DENIED'
         });
@@ -418,7 +419,7 @@ const requireOwnership = (modelName, paramName = 'id') => {
       next();
     } catch (error) {
       console.error('Erreur vérification propriété:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Erreur de vérification des permissions',
         code: 'OWNERSHIP_VERIFICATION_ERROR'
       });
@@ -434,7 +435,7 @@ const verify2FACode = async (req, res, next) => {
     const { code_2fa } = req.body;
 
     if (!code_2fa) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Code 2FA requis',
         code: '2FA_REQUIRED'
       });
@@ -442,7 +443,7 @@ const verify2FACode = async (req, res, next) => {
 
     // Vérification du format
     if (code_2fa.length !== 6 || !/^\d{6}$/.test(code_2fa)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Le code 2FA doit contenir 6 chiffres',
         code: 'INVALID_2FA_FORMAT'
       });
@@ -450,12 +451,12 @@ const verify2FACode = async (req, res, next) => {
 
     // Vérifier le code 2FA
     const isValid = AuthService.verify2FACode(
-      req.utilisateur.deux_fa_secret, 
+      req.utilisateur.deux_fa_secret,
       code_2fa
     );
 
     if (!isValid) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Code 2FA invalide',
         code: 'INVALID_2FA_CODE'
       });
@@ -466,7 +467,7 @@ const verify2FACode = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Erreur vérification 2FA:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Erreur de vérification 2FA',
       code: '2FA_VERIFICATION_ERROR'
     });
@@ -479,7 +480,7 @@ const verify2FACode = async (req, res, next) => {
 const logAccess = (action) => {
   return async (req, res, next) => {
     const start = Date.now();
-    
+
     // Journaliser après la réponse (utiliser LogConnexion pour accès)
     res.on('finish', async () => {
       try {

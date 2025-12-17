@@ -64,7 +64,8 @@ const authController = {
         role,
         telephone,
         etablissement_id,
-        deux_fa_active: rolesRequiring2FA.includes(role)
+        etablissement_id,
+        deux_fa_active: false // Sera activé après vérification du code
       };
 
       // Si le rôle nécessite la 2FA, générer un secret
@@ -109,7 +110,8 @@ const authController = {
             prenom: utilisateur.prenom,
             role: utilisateur.role,
             etablissement_id: utilisateur.etablissement_id,
-            deux_fa_active: true,
+            etablissement_id: utilisateur.etablissement_id,
+            deux_fa_active: false,
             deux_fa_setup_required: true,
             qr_code_url: qrCodeUrl, // Retourner le QR Code pour configuration
             secret: twoFASecret.secret // Pour développement/test seulement
@@ -465,8 +467,21 @@ const authController = {
         deux_fa_active: true
       });
 
+      // Générer un nouveau token avec twoFAVerified: true pour éviter la déconnexion
+      const token = jwt.sign(
+        {
+          id: utilisateur.id,
+          email: utilisateur.email,
+          role: utilisateur.role,
+          twoFAVerified: true
+        },
+        config.jwt.secret,
+        { expiresIn: config.jwt.expiresIn }
+      );
+
       res.json({
         message: '2FA activée avec succès',
+        token,
         code: '2FA_ACTIVATED'
       });
 
