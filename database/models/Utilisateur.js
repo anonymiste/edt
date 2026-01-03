@@ -12,7 +12,7 @@ const Utilisateur = sequelize.define('Utilisateur', {
     type: DataTypes.STRING,
     allowNull: false,
     unique: true,
-    validate: { 
+    validate: {
       isEmail: true,
       notEmpty: true
     }
@@ -91,9 +91,7 @@ const Utilisateur = sequelize.define('Utilisateur', {
     }
   },
   indexes: [
-    {
-      fields: ['email']
-    },
+
     {
       fields: ['etablissement_id']
     },
@@ -104,14 +102,14 @@ const Utilisateur = sequelize.define('Utilisateur', {
 });
 
 // Méthodes d'instance
-Utilisateur.prototype.toJSON = function() {
+Utilisateur.prototype.toJSON = function () {
   const values = { ...this.get() };
   delete values.mot_de_passe_hash;
   delete values.deux_fa_secret;
   return values;
 };
 
-Utilisateur.prototype.getNomComplet = function() {
+Utilisateur.prototype.getNomComplet = function () {
   return `${this.prenom} ${this.nom}`;
 };
 

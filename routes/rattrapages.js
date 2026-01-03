@@ -12,61 +12,57 @@ router.use(logAccess('rattrapages'));
 
 // Routes accessibles aux administrateurs, directeurs, responsables pédagogiques et enseignants
 const rolesAutorises = [
-  RoleUtilisateur.ADMIN, 
-  RoleUtilisateur.DIRECTEUR, 
+  RoleUtilisateur.ADMIN,
+  RoleUtilisateur.DIRECTEUR,
   RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE,
   RoleUtilisateur.ENSEIGNANT
 ];
 
-router.get('/', 
-  requireRole(rolesAutorises), 
+router.get('/',
+  requireRole(rolesAutorises),
   queryValidation.pagination,
   handleValidationErrors,
   rattrapageController.getAllRattrapages
 );
 
-router.post('/', 
+router.post('/',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   rattrapageValidation.create,
   handleValidationErrors,
   rattrapageController.createRattrapage
 );
 
 // Routes accessibles à tous les utilisateurs authentifiés de l'établissement
-router.get('/:id', 
+router.get('/:id',
   rattrapageController.getRattrapageById
 );
 
 // Routes accessibles aux rôles autorisés seulement
-router.post('/:id/schedule', 
+router.post('/:id/schedule',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   rattrapageValidation.planifier,
   handleValidationErrors,
   rattrapageController.planifierRattrapage
 );
 
-router.post('/:id/complete', 
+router.post('/:id/complete',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   rattrapageController.marquerRealise
 );
 
-router.post('/:id/cancel', 
+router.post('/:id/cancel',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   rattrapageController.annulerRattrapage
 );
 
 // Routes statistiques
-router.get('/stats/urgent', 
-  requireRole(rolesAutorises), 
+router.get('/stats/urgent',
+  requireRole(rolesAutorises),
   rattrapageController.getRattrapagesUrgents
 );
 
-router.get('/stats/overview', 
-  requireRole(rolesAutorises), 
+router.get('/stats/overview',
+  requireRole(rolesAutorises),
   rattrapageController.getRattrapageStats
 );
 

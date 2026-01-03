@@ -1,0 +1,125 @@
+@startuml Sequence_Diagrams
+
+' --- CONFIGURATION ---
+skinparam BoxPadding 10
+skinparam ParticipantPadding 20
+
+' ==============================================================================
+' DIAGRAMME 1 : AUTHENTIFICATION ET 2FA
+' ==============================================================================
+newpage Authentification et 2FA
+
+actor Utilisateur
+participant "Vue React (Login)" as Front
+participant "Auth Controller" as Controller
+participant "Auth Service" as Service
+database DB
+
+Utilisateur -> Front: Saisir Email/MDP
+Front -> Controller: POST /auth/login {email, password}
+activate Controller
+
+Controller -> DB: findOne({email})
+DB --> Controller: utilisateur
+Controller -> Controller: bcrypt.compare(password, hash)
+
+alt Identifiants Invalides
+    Controller --> Front: 401 Invalid Credentials
+else Identifiants Valides
+    Controller -> Controller: Vérifier si 2FA requis (Role/Status)
+    
+    alt 2FA Requis
+        Controller --> Front: 200 {requires2FA: true}
+        Utilisateur -> Front: Saisir code 2FA
+        Front -> Controller: POST /auth/verify-2fa {code}
+        Controller -> Service: verify2FACode(secret, code)
+        Service --> Controller: true/false
+        
+        alt Code Invalide
+            Controller --> Front: 401 Invalid 2FA
+        else Code Valide
+            Controller -> Controller: Générer JWT (twoFAVerified: true)
+            Controller --> Front: 200 {token}
+        end
+    else 2FA Non Requis
+        Controller -> Controller: Générer JWT
+        Controller --> Front: 200 {token}
+    end
+end
+deactivate Controller
+Front -> Front: Stocker Token (LocalStorage/Context)
+
+' ==============================================================================
+' DIAGRAMME 2 : CONSULTATION DE L'EMPLOI DU TEMPS
+' ==============================================================================
+newpage Consultation de l'Emploi du Temps
+
+actor "Étudiant/Enseignant" as Acteur
+participant "Vue React (EDT)" as Page
+participant "API Client (Axios)" as Axios
+participant "Middleware Auth" as AuthMW
+participant "EDT Controller" as EDTController
+database DB
+
+Acteur -> Page: Accéder à l'onglet EDT
+activate Page
+
+Page -> Axios: getMonEmploiTemps()
+Axios -> AuthMW: GET /emplois-temps/me (Header Auth: JWT)
+activate AuthMW
+
+AuthMW -> AuthMW: jwt.verify(token)
+AuthMW -> DB: findByPk(id)
+DB --> AuthMW: utilisateur
+AuthMW --> EDTController: next() (req.utilisateur = user)
+deactivate AuthMW
+ 
+activate EDTController
+EDTController -> DB: Query Seances (user_id, semaine)
+DB --> EDTController: seances[]
+EDTController --> Axios: 200 OK {data}
+deactivate EDTController
+
+Axios --> Page: payload
+Page -> Page: Mise à jour du State
+Page --> Acteur: Affichage de la grille EDT
+deactivate Page
+
+' ==============================================================================
+' DIAGRAMME 3 : GESTION ADMINISTRATIVE (CRUD)
+' ==============================================================================
+newpage Gestion Administrative (Ex: Création Classe)
+
+actor "Administrateur" as Admin
+participant "Vue React (Form)" as Form
+participant "API Client" as API
+participant "Middlewares" as MW
+participant "Classe Controller" as CController
+database DB
+
+Admin -> Form: Remplir formulaire classe
+Form -> API: createClasse(data)
+API -> MW: POST /gestion/classes (Auth Header + X-Etab-Code)
+activate MW
+
+MW -> MW: authenticateToken()
+MW -> MW: requireRole(['admin', 'directeur', ...])
+MW -> DB: findEtablissement(current_etab_id)
+DB --> MW: etablissement (verify code_acces)
+
+alt Code ou Rôle Invalide
+    MW --> API: 403 Forbidden
+else Autorisé
+    MW --> CController: next()
+    activate CController
+    CController -> DB: Classe.create(data)
+    DB --> CController: new_classe
+    CController --> API: 201 Created
+    deactivate CController
+end
+deactivate MW
+
+API --> Form: Success
+Form --> Admin: Notification Succès
+
+@enduml

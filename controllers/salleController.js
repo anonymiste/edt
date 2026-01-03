@@ -11,12 +11,12 @@ const salleController = {
    */
   getAllSalles: async (req, res) => {
     try {
-      const { page = 1, limit = 10, type_salle, statut, search } = req.query;
+      const { page = 1, limit = 100, type_salle, statut, search } = req.query;
       const offset = (page - 1) * limit;
 
       const scopedEtablissementId = resolveScopedEtablissementId(req);
       const whereClause = applyEtablissementScope(req, {});
-      
+
       if (type_salle) {
         whereClause.type_salle = type_salle;
       }
@@ -27,8 +27,8 @@ const salleController = {
 
       if (search) {
         whereClause[Op.or] = [
-          { nom_salle: { [Op.iLike]: `%${search}%` } },
-          { batiment: { [Op.iLike]: `%${search}%` } }
+          { nom_salle: { [Op.like]: `%${search}%` } },
+          { batiment: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -162,8 +162,8 @@ const salleController = {
       } = req.body;
 
       // Vérifier si la salle existe déjà dans le même bâtiment
-      const existingSalle = await Salle.findOne({ 
-        where: applyEtablissementScope(req, { nom_salle, batiment }) 
+      const existingSalle = await Salle.findOne({
+        where: applyEtablissementScope(req, { nom_salle, batiment })
       });
 
       if (existingSalle) {
@@ -218,9 +218,9 @@ const salleController = {
       const updates = req.body;
 
       const salle = await Salle.findOne({
-        where: { 
+        where: {
           id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: req.utilisateur.etablissement_id
         }
       });
 
@@ -233,13 +233,13 @@ const salleController = {
 
       // Vérifier si le nouveau nom existe déjà (sauf pour cette salle)
       if (updates.nom_salle && updates.nom_salle !== salle.nom_salle) {
-        const existingSalle = await Salle.findOne({ 
-          where: { 
+        const existingSalle = await Salle.findOne({
+          where: {
             nom_salle: updates.nom_salle,
             batiment: updates.batiment || salle.batiment,
             etablissement_id: req.utilisateur.etablissement_id,
             id: { [Op.ne]: id }
-          } 
+          }
         });
 
         if (existingSalle) {
@@ -275,9 +275,9 @@ const salleController = {
       const { id } = req.params;
 
       const salle = await Salle.findOne({
-        where: { 
+        where: {
           id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: req.utilisateur.etablissement_id
         }
       });
 
@@ -313,9 +313,9 @@ const salleController = {
       const { id } = req.params;
 
       const salle = await Salle.findOne({
-        where: { 
+        where: {
           id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: req.utilisateur.etablissement_id
         }
       });
 
@@ -352,9 +352,9 @@ const salleController = {
       const { jour_semaine, heure_debut, heure_fin, date } = req.body;
 
       const salle = await Salle.findOne({
-        where: { 
+        where: {
           id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: req.utilisateur.etablissement_id
         }
       });
 
@@ -430,9 +430,9 @@ const salleController = {
       const { id } = req.params;
 
       const salle = await Salle.findOne({
-        where: { 
+        where: {
           id,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: req.utilisateur.etablissement_id
         }
       });
 
@@ -451,18 +451,18 @@ const salleController = {
       ] = await Promise.all([
         Cours.count({ where: { salle_id: id } }),
         CreneauCours.count({ where: { salle_id: id } }),
-        CreneauCours.count({ 
-          where: { 
+        CreneauCours.count({
+          where: {
             salle_id: id,
             date_debut_validite: { [Op.gte]: new Date() }
-          } 
+          }
         }),
         // Calculer le taux d'occupation (simplifié)
-        CreneauCours.count({ 
-          where: { 
+        CreneauCours.count({
+          where: {
             salle_id: id,
             statut: 'confirme'
-          } 
+          }
         })
       ]);
 

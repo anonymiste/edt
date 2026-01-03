@@ -1,0 +1,202 @@
+@startuml
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam class {
+    BackgroundColor White
+    ArrowColor #268bd2
+    BorderColor #268bd2
+}
+
+package "Core & Auth" {
+    class Utilisateur {
+        + uuid id
+        + string nom
+        + string prenom
+        + string email
+        + enum role
+        + boolean two_factor_enabled
+    }
+
+    class Etablissement {
+        + uuid id
+        + string nom
+        + string adresse
+        + string code_etablissement
+    }
+}
+
+package "Rôles Spécifiques" {
+    class Directeur {
+        + uuid id
+        + uuid utilisateur_id
+        + uuid etablissement_id
+    }
+    class ResponsablePedagogique {
+        + uuid id
+        + uuid utilisateur_id
+        + uuid etablissement_id
+    }
+    class Enseignant {
+        + uuid id
+        + uuid utilisateur_id
+        + uuid etablissement_id
+        + string matricule
+    }
+    class Eleve {
+        + uuid id
+        + uuid utilisateur_id
+        + uuid etablissement_id
+        + uuid classe_id
+        + string matricule
+    }
+}
+
+package "Structure Académique" {
+    class Classe {
+        + uuid id
+        + string nom_classe
+        + string niveau
+        + enum statut
+    }
+    class Matiere {
+        + uuid id
+        + string nom_matiere
+        + string code_matiere
+        + string couleur_affichage
+    }
+    class Salle {
+        + uuid id
+        + string nom_salle
+        + string batiment
+        + int capacite
+    }
+}
+
+package "Enseignement & Planning" {
+    class Cours {
+        + uuid id
+        + uuid classe_id
+        + uuid matiere_id
+        + uuid enseignant_id
+        + uuid salle_id
+        + float volume_horaire_hebdo
+    }
+    class EmploiTemps {
+        + uuid id
+        + uuid classe_id
+        + uuid etablissement_id
+        + uuid generateur_id
+        + enum statut
+        + date periode_debut
+        + date periode_fin
+    }
+    class CreneauCours {
+        + uuid id
+        + uuid cours_id
+        + uuid salle_id
+        + enum jour_semaine
+        + time heure_debut
+        + time heure_fin
+    }
+}
+
+package "Suivi & Événements" {
+    class Absence {
+        + uuid id
+        + uuid eleve_id
+        + uuid enseignant_id
+        + uuid cours_id
+        + date date_absence
+        + enum statut
+    }
+    class Rattrapage {
+        + uuid id
+        + uuid cours_id
+        + uuid creneau_planifie_id
+        + date date_rattrapage
+        + enum statut
+    }
+    class Disponibilite {
+        + uuid id
+        + uuid enseignant_id
+        + enum jour_semaine
+        + time heure_debut
+        + time heure_fin
+    }
+}
+
+package "Système" {
+    class Notification {
+        + uuid id
+        + uuid utilisateur_id
+        + string titre
+        + text message
+        + boolean lu
+    }
+
+
+    class LogConnexion {
+        + uuid id
+        + uuid utilisateur_id
+        + string adresse_ip
+    }
+    class LogModification {
+        + uuid id
+        + uuid utilisateur_id
+        + string model_name
+        + json anciennes_valeurs
+        + json nouvelles_valeurs
+    }
+    class Contrainte {
+        + uuid id
+        + uuid etablissement_id
+        + string type_contrainte
+        + json configuration
+    }
+}
+
+' --- RELATIONS ---
+
+' Relations Hiérarchiques (1-1 avec Utilisateur)
+Utilisateur "1" -- "0..1" Directeur : profile
+Utilisateur "1" -- "0..1" ResponsablePedagogique : profile
+Utilisateur "1" -- "0..1" Enseignant : profile
+Utilisateur "1" -- "0..1" Eleve : profile
+
+' Relations Etablissement (Propriété)
+Etablissement "1" -- "0..*" Utilisateur
+Etablissement "1" -- "0..*" Classe
+Etablissement "1" -- "0..*" Matiere
+Etablissement "1" -- "0..*" Salle
+Etablissement "1" -- "0..*" Contrainte
+
+' Académique
+Classe "1" -- "0..*" Eleve
+Classe "1" -- "0..*" Cours
+Classe "1" -- "0..*" EmploiTemps
+Matiere "1" -- "0..*" Cours
+Enseignant "1" -- "*" Matiere : enseignants_matieres (Many-to-Many)
+Enseignant "1" -- "0..*" Cours
+Salle "1" -- "0..*" Cours
+Salle "1" -- "0..*" CreneauCours
+
+' Planning
+EmploiTemps "1" -- "0..*" CreneauCours
+Cours "1" -- "0..*" CreneauCours
+Utilisateur "1" -- "0..*" EmploiTemps
+'  : génère (generateur_id)
+
+' Suivi
+Cours "1" -- "0..*" Rattrapage
+CreneauCours "1" -- "0..1" Rattrapage : creneau_planifie
+Enseignant "1" -- "0..*" Absence
+Eleve "1" -- "0..*" Absence
+Cours "1" -- "0..*" Absence
+Enseignant "1" -- "0..*" Disponibilite
+
+' Logs & Notifs
+Utilisateur "1" -- "*" Notification
+Utilisateur "1" -- "*" LogConnexion
+Utilisateur "1" -- "*" LogModification
+
+@enduml

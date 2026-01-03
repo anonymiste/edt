@@ -1,10 +1,12 @@
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
+let ioInstance = null;
 
 // Middleware de sécurité
 app.use(helmet({
@@ -17,7 +19,7 @@ app.use(cors({
   origin: 'http://localhost:1102',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-etablissement-code', 'x-etablissement-access-code']
 }));
 
 // Limitation de requêtes
@@ -50,8 +52,27 @@ const coursRoutes = require('./routes/cours');
 const emploiTempsRoutes = require('./routes/emplois-temps');
 const rattrapageRoutes = require('./routes/rattrapages');
 const absenceRoutes = require('./routes/absences');
+const teacherAbsenceRoutes = require('./routes/teacherAbsences');
 const statistiqueRoutes = require('./routes/statistiques');
 const notificationRoutes = require('./routes/notifications');
+const eleveRoutes = require('./routes/eleves');
+const directeurRoutes = require('./routes/directeurs');
+const rpRoutes = require('./routes/responsables');
+const periodeRoutes = require('./routes/periodes');
+const evaluationRoutes = require('./routes/evaluations');
+const noteRoutes = require('./routes/notes');
+const bulletinRoutes = require('./routes/bulletins');
+const ressourceRoutes = require('./routes/ressources');
+const seanceVirtuelleRoutes = require('./routes/seancesVirtuelles');
+const examenRoutes = require('./routes/examens');
+const sessionExamenRoutes = require('./routes/sessionsExamen');
+const repartitionRoutes = require('./routes/repartitions');
+const subscriptionRoutes = require('./routes/subscriptions');
+const invoiceRoutes = require('./routes/invoices');
+const pricingRoutes = require('./routes/pricing');
+const paymentRoutes = require('./routes/payments');
+const accreditationRoutes = require('./routes/accreditationRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 const { logAccess } = require('./middleware/auth');
 
@@ -60,6 +81,15 @@ app.use((req, res, next) => {
   // on logge tout ; action générique "global"
   return logAccess('global')(req, res, next);
 });
+
+// Middleware pour rendre io accessible dans les routes
+app.use((req, res, next) => {
+  req.io = ioInstance;
+  next();
+});
+
+// Servir les fichiers statiques (uploads)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes API
 app.use('/api/auth', authRoutes);
@@ -73,8 +103,27 @@ app.use('/api/cours', coursRoutes);
 app.use('/api/emplois-temps', emploiTempsRoutes);
 app.use('/api/rattrapages', rattrapageRoutes);
 app.use('/api/absences', absenceRoutes);
+app.use('/api/teacher/absences', teacherAbsenceRoutes);
 app.use('/api/statistiques', statistiqueRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/eleves', eleveRoutes);
+app.use('/api/directeurs', directeurRoutes);
+app.use('/api/responsables-pedagogiques', rpRoutes);
+app.use('/api/periodes', periodeRoutes);
+app.use('/api/evaluations', evaluationRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/invoices', invoiceRoutes);
+app.use('/api/pricing', pricingRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/notes', noteRoutes);
+app.use('/api/bulletins', bulletinRoutes);
+app.use('/api/ressources', ressourceRoutes);
+app.use('/api/seances-virtuelles', seanceVirtuelleRoutes);
+app.use('/api/examens', examenRoutes);
+app.use('/api/sessions-examen', sessionExamenRoutes);
+app.use('/api/repartitions', repartitionRoutes);
+app.use('/api/accreditations', accreditationRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Routes système
 app.get('/api/health', (req, res) => {
@@ -161,8 +210,8 @@ app.use((error, req, res, next) => {
 
   // Erreur par défaut
   const status = error.status || 500;
-  const message = process.env.NODE_ENV === 'production' 
-    ? 'Erreur interne du serveur' 
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Erreur interne du serveur'
     : error.message;
 
   res.status(status).json({
@@ -181,13 +230,87 @@ const startServer = async () => {
     // Test de la connexion à la base de données
     const { testConnection } = require('./config/database');
     await testConnection();
-    
-    // Synchronisation des modèles
-    const { sequelize } = require('./config/database');
-    await sequelize.sync({ force: false });
-    console.log('✅ Base de données synchronisée');
 
-    app.listen(PORT, () => {
+    // Configuration Socket.io
+    const http = require('http');
+    const { Server } = require("socket.io");
+    const server = http.createServer(app);
+    const io = new Server(server, {
+      cors: {
+        origin: 'http://localhost:1102',
+        methods: ["GET", "POST"],
+        allowedHeaders: ["my-custom-header"],
+        credentials: true
+      }
+    });
+    ioInstance = io;
+
+    io.on('connection', (socket) => {
+      console.log(`User connected: ${socket.id}`);
+
+      // Rejoindre la room globale de l'utilisateur (pour notifs privées)
+      socket.on('join_user_room', (userId) => {
+        socket.join(`user_${userId}`);
+        console.log(`User ${userId} joined their personal room`);
+      });
+
+      // Rejoindre une conversation spécifique
+      socket.on('join_conversation', (conversationId) => {
+        socket.join(`conversation_${conversationId}`);
+        console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
+      });
+
+      // Quitter une conversation
+      socket.on('leave_conversation', (conversationId) => {
+        socket.leave(`conversation_${conversationId}`);
+      });
+
+      // Typing indicators
+      socket.on('typing', (data) => {
+        // data: { conversationId, userId, isTyping }
+        socket.to(`conversation_${data.conversationId}`).emit('user_typing', data);
+      });
+
+      socket.on('disconnect', () => {
+        console.log("User Disconnected", socket.id);
+      });
+    });
+
+    // Synchronisation des modèles désactivée temporairement pour éviter l'erreur de limite d'index MySQL
+    const { sequelize } = require('./config/database');
+    // await sequelize.sync({ force: false });
+    console.log('✅ Base de données prête (sync sautée)');
+
+    // Gestion robuste des erreurs de port
+    server.on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        console.error(`❌ Le port ${PORT} est déjà utilisé.`);
+        console.log(`💡 Tentative de libération du port ${PORT}...`);
+
+        const { exec } = require('child_process');
+        const command = process.platform === 'win32'
+          ? `powershell -Command "Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force"`
+          : `npx kill-port ${PORT}`;
+
+        exec(command, (err) => {
+          if (err) {
+            console.error(`❌ Impossible de libérer le port ${PORT}. Fermez le processus manuellement.`);
+            process.exit(1);
+          } else {
+            console.log(`✅ Port ${PORT} libéré. Redémarrage dans 2 secondes...`);
+            setTimeout(() => {
+              server.listen(PORT, () => {
+                console.log(`🚀 Serveur redémarré sur le port ${PORT}`);
+              });
+            }, 2000);
+          }
+        });
+      } else {
+        console.error('❌ Erreur serveur:', e);
+      }
+    });
+
+    server.listen(PORT, () => {
       console.log('🚀 Serveur EDT Generator démarré avec succès!');
       console.log(`📍 Port: ${PORT}`);
       console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
@@ -199,7 +322,11 @@ const startServer = async () => {
       console.log('   POST /api/auth/register');
       console.log('   GET  /api/etablissements');
       console.log('   GET  /api/classes');
-      console.log('   POST /api/emplois-temps/generer');
+      console.log(`POST /api/emplois-temps/generer`);
+
+      // Démarrer le scheduler de tâches automatisées
+      const schedulerService = require('./services/schedulerService');
+      schedulerService.start();
     });
   } catch (error) {
     console.error('❌ Erreur démarrage serveur:', error);

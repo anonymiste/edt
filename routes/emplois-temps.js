@@ -10,76 +10,82 @@ const { RoleUtilisateur } = require('../utils/enums');
 router.use(authenticateToken);
 router.use(logAccess('emplois_temps'));
 
+// Export - doit être AVANT les routes avec paramètres :id
+router.get('/export/pdf',
+  emploiTempsController.exportPDF
+);
+
 // Roles autorisés pour la gestion
 const rolesAutorises = [
-  RoleUtilisateur.ADMIN, 
-  RoleUtilisateur.DIRECTEUR, 
+  RoleUtilisateur.ADMIN,
+  RoleUtilisateur.DIRECTEUR,
   RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE
 ];
 
 // Routes publiques (pour utilisateurs authentifiés)
-router.get('/me', 
+router.get('/me',
   emploiTempsController.getMonEmploiTemps
 );
 
-router.get('/classe/:classeId', 
+router.get('/classe/:classeId',
   emploiTempsController.getEmploiTempsParClasse
 );
 
-router.get('/enseignant/:enseignantId', 
+router.get('/enseignant/:enseignantId',
   emploiTempsController.getEmploiTempsParEnseignant
 );
 
 // Routes administratives
-router.get('/', 
-  requireRole(rolesAutorises), 
+router.get('/',
+  requireRole(rolesAutorises),
   queryValidation.pagination,
   handleValidationErrors,
   emploiTempsController.getAllEmploisTemps
 );
 
-router.post('/generate', 
+router.post('/generer',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   emploiTempsValidation.generer,
   handleValidationErrors,
   emploiTempsController.genererEmploiTemps
 );
 
-router.get('/:id', 
+router.get('/:id',
   emploiTempsController.getEmploiTempsById
 );
 
-router.get('/:id/stats', 
+router.get('/:id/status',
+  emploiTempsController.getEmploiTempsStatus
+);
+
+router.get('/:id/stats',
   emploiTempsController.getEmploiTempsStats
 );
 
-router.post('/:id/validate', 
+router.post('/:id/validate',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   emploiTempsController.validerEmploiTemps
 );
 
-router.post('/:id/publish', 
+router.post('/:id/publish',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   emploiTempsController.publierEmploiTemps
 );
 
-router.post('/:id/archive', 
+router.post('/:id/archive',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   emploiTempsController.archiverEmploiTemps
 );
 
-router.post('/:id/duplicate', 
+router.post('/:id/duplicate',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   emploiTempsController.dupliquerEmploiTemps
 );
 
 // Gestion des séances
-router.post('/seances', 
+router.post('/seances',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   emploiTempsValidation.seance,
@@ -87,7 +93,7 @@ router.post('/seances',
   emploiTempsController.createSeance
 );
 
-router.put('/seances/:id', 
+router.put('/seances/:id',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   emploiTempsValidation.seance,
@@ -95,13 +101,13 @@ router.put('/seances/:id',
   emploiTempsController.updateSeance
 );
 
-router.delete('/seances/:id', 
+router.delete('/seances/:id',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   emploiTempsController.deleteSeance
 );
 
-router.put('/seances/:id/annuler', 
+router.put('/seances/:id/annuler',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   emploiTempsValidation.annulation,
@@ -109,9 +115,6 @@ router.put('/seances/:id/annuler',
   emploiTempsController.annulerSeance
 );
 
-// Export
-router.get('/export/pdf', 
-  emploiTempsController.exportPDF
-);
+
 
 module.exports = router;

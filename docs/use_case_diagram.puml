@@ -1,0 +1,79 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Étudiant" as etudiant
+actor "Enseignant" as enseignant
+actor "Responsable Pédagogique" as resp_pedag
+actor "Directeur" as directeur
+actor "Personnel" as personnel
+actor "Administrateur" as admin
+
+rectangle "EDT Manager" {
+  (Tableau de bord) as UC1
+  
+  package "Espace Étudiant" {
+    (Consulter Emploi du temps) as UC_E1
+    (Consulter Mes cours) as UC_E2
+    (Consulter Mes absences) as UC_E3
+    (Recevoir Notifications) as UC_E4
+  }
+  
+  package "Espace Enseignant" {
+    (Consulter Mon emploi du temps) as UC_T1
+    (Consulter Mes cours) as UC_T2
+    (Gérer les absences) as UC_T3
+    (Gérer mes rattrapages) as UC_T4
+  }
+  
+  package "Pédagogie & Ressources" {
+    (Gérer les Classes) as UC_P1
+    (Gérer les Enseignants) as UC_P2
+    (Gérer les Matières) as UC_P3
+    (Gérer les Emplois du temps globaux) as UC_P4
+    (Gérer les Salles) as UC_P5
+    (Gérer les Rattrapages) as UC_P6
+  }
+  
+  package "Administration" {
+    (Gérer les Établissements) as UC_A1
+    (Gérer les Utilisateurs) as UC_A2
+    (Configurer les Paramètres) as UC_A3
+  }
+}
+
+etudiant --> UC1
+etudiant --> UC_E1
+etudiant --> UC_E2
+etudiant --> UC_E3
+etudiant --> UC_E4
+
+enseignant --> UC1
+enseignant --> UC_T1
+enseignant --> UC_T2
+enseignant --> UC_T3
+enseignant --> UC_T4
+enseignant --> UC_P6
+
+resp_pedag --> UC1
+resp_pedag --> UC_P1
+resp_pedag --> UC_P2
+resp_pedag --> UC_P3
+resp_pedag --> UC_P4
+resp_pedag --> UC_P5
+resp_pedag --> UC_P6
+
+directeur --> UC1
+directeur --|> resp_pedag
+directeur --|> admin
+directeur --> UC_P5
+
+personnel --> UC1
+personnel --> UC_P5
+
+admin --> UC1
+admin --> UC_A1
+admin --> UC_A2
+admin --> UC_A3
+
+@enduml

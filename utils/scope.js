@@ -5,12 +5,21 @@ const isAdminSystem = (utilisateur = {}) => utilisateur?.role === RoleUtilisateu
 const resolveScopedEtablissementId = (req) => {
   const fromQuery = req.query?.etablissement_id;
   const fromBody = req.body?.etablissement_id;
+  const ut = req.utilisateur;
 
-  if (isAdminSystem(req.utilisateur)) {
-    return fromQuery || fromBody || req.utilisateur?.etablissement_id || null;
+  // Récupérer l'ID direct de l'utilisateur ou via ses profils spécialisés
+  const userEtabId = ut?.etablissement_id ||
+    ut?.directeur?.etablissement_id ||
+    ut?.enseignant?.etablissement_id ||
+    ut?.eleve?.etablissement_id ||
+    ut?.responsablePedagogique?.etablissement_id ||
+    null;
+
+  if (isAdminSystem(ut)) {
+    return fromQuery || fromBody || userEtabId;
   }
 
-  return req.utilisateur?.etablissement_id || null;
+  return userEtabId;
 };
 
 const applyEtablissementScope = (req, baseWhere = {}) => {

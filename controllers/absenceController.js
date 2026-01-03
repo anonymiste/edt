@@ -3,7 +3,9 @@ const { Absence, Enseignant, Cours, Utilisateur, LogModification } = require('..
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { StatutAbsence, TypeOperation } = require('../utils/enums');
+const NotificationService = require('../services/notificationService');
 const { resolveScopedEtablissementId } = require('../utils/scope');
+const { sequelize } = require('../config/database');
 
 const resolveEnseignantIdFromUser = async (utilisateur) => {
   if (!utilisateur || utilisateur.role !== 'enseignant') return null;
@@ -27,11 +29,11 @@ const absenceController = {
    */
   getAllAbsences: async (req, res) => {
     try {
-      const { page = 1, limit = 10, enseignant_id, statut, date_debut, date_fin } = req.query;
+      const { page = 1, limit = 100, enseignant_id, statut, date_debut, date_fin } = req.query;
       const offset = (page - 1) * limit;
 
       const whereClause = {};
-      
+
       const scopedEtablissementId = resolveScopedEtablissementId(req);
       const selfEnseignantId = await resolveEnseignantIdFromUser(req.utilisateur);
 
@@ -193,9 +195,9 @@ const absenceController = {
       }
 
       const enseignant = await Enseignant.findOne({
-        where: { 
+        where: {
           id: enseignant_id,
-          etablissement_id: scopedEtablissementId 
+          etablissement_id: scopedEtablissementId
         }
       });
 
@@ -234,7 +236,6 @@ const absenceController = {
         cours_concernes,
         statut: StatutAbsence.DECLAREE
       });
-
       await LogModification.create({
         utilisateur_id: req.utilisateur.id,
         table_concernee: 'absences',
@@ -250,6 +251,20 @@ const absenceController = {
         },
         adresse_ip: req.ip
       });
+
+      // Notifier les responsables pédagogiques
+      try {
+        // Recharger l'absence avec les relations nécessaires pour la notification
+        const absenceFull = await Absence.findByPk(absence.id, {
+          include: [{
+            association: 'enseignant',
+            include: [{ association: 'utilisateur' }]
+          }]
+        });
+        await NotificationService.notifierAbsence(absenceFull);
+      } catch (notifyError) {
+        console.error('Erreur notification absence:', notifyError);
+      }
 
       res.status(201).json({
         message: 'Absence déclarée avec succès',
@@ -425,9 +440,9 @@ const absenceController = {
   getAbsenceStats: async (req, res) => {
     try {
       const { periode_debut, periode_fin } = req.query;
-      
+
       const whereClause = {};
-      
+
       if (periode_debut && periode_fin) {
         whereClause.date_debut = {
           [Op.between]: [periode_debut, periode_fin]
@@ -463,8 +478,8 @@ const absenceController = {
           where: { etablissement_id: req.utilisateur.etablissement_id }
         }],
         attributes: [
-          [sequelize.fn('AVG', 
-            sequelize.literal(`EXTRACT(EPOCH FROM (date_fin - date_debut)) / 86400`)
+          [sequelize.fn('AVG',
+            sequelize.literal(`DATEDIFF(date_fin, date_debut)`)
           ), 'moyenne_duree']
         ]
       });
@@ -483,6 +498,128 @@ const absenceController = {
       res.status(500).json({
         error: 'Erreur lors de la récupération des statistiques',
         code: 'ABSENCES_STATS_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Enregistrer les absences des élèves (Appel)
+   */
+  declarerAbsencesEleves: async (req, res) => {
+    try {
+      const { cours_id, date, absences } = req.body;
+      // absences: [{ eleve_id, motif, statut }]
+
+      if (!absences || !Array.isArray(absences)) {
+        return res.status(400).json({
+          error: 'Liste d absences invalide',
+          code: 'INVALID_ABSENCE_LIST'
+        });
+      }
+
+      // Vérifier le cours
+      const cours = await Cours.findByPk(cours_id);
+      if (!cours) {
+        return res.status(404).json({
+          error: 'Cours non trouvé',
+          code: 'COURS_NOT_FOUND'
+        });
+      }
+
+      // Supprimer les anciennes absences déclarées pour ce cours/date (gestion ré-appel)
+      // Attention: ne touche pas aux absences validées/justifiées si on veut préserver l'historique administratif ?
+      // Pour l'instant, on suppose que l'enseignant peut modifier l'appel du jour.
+      await Absence.destroy({
+        where: {
+          cours_id,
+          date_debut: { [Op.eq]: date }, // On assume date début = date fin = date du cours pour l'appel standard
+          eleve_id: { [Op.ne]: null },
+          enseignant_id: null
+        }
+      });
+
+      const absencesToCreate = absences.map(a => ({
+        eleve_id: a.eleve_id,
+        cours_id,
+        date_debut: date,
+        date_fin: date,
+        statut: StatutAbsence.DECLAREE,
+        motif: a.motif || 'Absence au cours',
+        necessite_remplacement: false
+      }));
+
+      if (absencesToCreate.length > 0) {
+        await Absence.bulkCreate(absencesToCreate);
+      }
+
+      res.status(201).json({
+        message: 'Appel enregistré avec succès',
+        count: absencesToCreate.length,
+        code: 'STUDENT_ATTENDANCE_SAVED'
+      });
+
+    } catch (error) {
+      console.error('Erreur enregistrement appel élèves:', error);
+      res.status(500).json({
+        error: 'Erreur lors de l enregistrement de l appel',
+        code: 'STUDENT_ATTENDANCE_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Récupérer les absences de l'étudiant connecté
+   */
+  getMesAbsencesEtudiant: async (req, res) => {
+    try {
+      const utilisateur = req.utilisateur;
+
+      const eleve = await Eleve.findOne({
+        where: { utilisateur_id: utilisateur.id }
+      });
+
+      if (!eleve) {
+        return res.status(404).json({
+          error: 'Élève non trouvé',
+          code: 'STUDENT_NOT_FOUND'
+        });
+      }
+
+      const absences = await Absence.findAll({
+        where: { eleve_id: eleve.id },
+        include: [
+          {
+            association: 'cours',
+            attributes: ['id', 'volume_horaire_hebdo'],
+            include: [
+              {
+                association: 'matiere',
+                attributes: ['id', 'nom_matiere', 'code_matiere', 'couleur_affichage']
+              },
+              {
+                association: 'enseignant',
+                include: [{
+                  association: 'utilisateur',
+                  attributes: ['id', 'nom', 'prenom']
+                }]
+              }
+            ]
+          }
+        ],
+        order: [['date_debut', 'DESC']]
+      });
+
+      res.json({
+        absences,
+        total: absences.length,
+        code: 'MY_ABSENCES_RETRIEVED'
+      });
+
+    } catch (error) {
+      console.error('Erreur récupération absences étudiant:', error);
+      res.status(500).json({
+        error: 'Erreur lors de la récupération des absences',
+        code: 'MY_ABSENCES_ERROR'
       });
     }
   }

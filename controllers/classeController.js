@@ -1,5 +1,5 @@
 // controllers/classeController.js
-const { Classe, Etablissement, Cours, EmploiTemps, LogModification } = require('../database/models');
+const { Classe, Etablissement, Cours, EmploiTemps, LogModification, Utilisateur, Eleve } = require('../database/models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { StatutClasse, TypeOperation } = require('../utils/enums');
@@ -11,11 +11,11 @@ const classeController = {
    */
   getAllClasses: async (req, res) => {
     try {
-      const { page = 1, limit = 10, niveau, statut, search } = req.query;
+      const { page = 1, limit = 100, niveau, statut, search } = req.query;
       const offset = (page - 1) * limit;
 
       const whereClause = applyEtablissementScope(req, {});
-      
+
       if (niveau) {
         whereClause.niveau = niveau;
       }
@@ -26,8 +26,8 @@ const classeController = {
 
       if (search) {
         whereClause[Op.or] = [
-          { nom_classe: { [Op.iLike]: `%${search}%` } },
-          { filiere: { [Op.iLike]: `%${search}%` } }
+          { nom_classe: { [Op.like]: `%${search}%` } },
+          { filiere: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -96,6 +96,13 @@ const classeController = {
             association: 'emplois_temps',
             limit: 5,
             order: [['created_at', 'DESC']]
+          },
+          {
+            association: 'eleves',
+            include: [{
+              association: 'utilisateur',
+              attributes: ['id', 'nom', 'prenom', 'email', 'photo_url']
+            }]
           }
         ]
       });
@@ -349,10 +356,7 @@ const classeController = {
       const { id } = req.params;
 
       const classe = await Classe.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!classe) {
@@ -370,11 +374,11 @@ const classeController = {
       ] = await Promise.all([
         Cours.count({ where: { classe_id: id } }),
         EmploiTemps.count({ where: { classe_id: id } }),
-        EmploiTemps.count({ 
-          where: { 
+        EmploiTemps.count({
+          where: {
             classe_id: id,
-            statut: 'PUBLIE' 
-          } 
+            statut: 'PUBLIE'
+          }
         }),
         Cours.sum('volume_horaire_hebdo', { where: { classe_id: id } })
       ]);
@@ -395,6 +399,97 @@ const classeController = {
       res.status(500).json({
         error: 'Erreur lors de la récupération des statistiques',
         code: 'RECUPERATION_CLASS_STATS_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Assigner un étudiant à une classe
+   */
+  assignStudent: async (req, res) => {
+    try {
+      const { id: classe_id } = req.params;
+      const { utilisateur_id, matricule, date_naissance, adresse } = req.body;
+
+      const classe = await Classe.findOne({
+        where: applyEtablissementScope(req, { id: classe_id })
+      });
+
+      if (!classe) {
+        return res.status(404).json({ error: 'Classe non trouvée', code: 'CLASS_NOT_FOUND' });
+      }
+
+      const utilisateur = await Utilisateur.findOne({
+        where: applyEtablissementScope(req, { id: utilisateur_id })
+      });
+
+      if (!utilisateur) {
+        return res.status(404).json({ error: 'Utilisateur non trouvé', code: 'USER_NOT_FOUND' });
+      }
+
+      // Upsert Eleve profile
+      let eleve = await Eleve.findOne({ where: { utilisateur_id } });
+
+      if (eleve) {
+        await eleve.update({ classe_id, matricule, date_naissance, adresse });
+      } else {
+        eleve = await Eleve.create({
+          utilisateur_id,
+          etablissement_id: classe.etablissement_id,
+          classe_id,
+          matricule: matricule || `MAT-${Date.now()}`,
+          date_naissance,
+          adresse
+        });
+      }
+
+      res.json({
+        message: 'Étudiant assigné avec succès',
+        eleve,
+        code: 'STUDENT_ASSIGNED'
+      });
+
+    } catch (error) {
+      console.error('Erreur assignation étudiant:', error);
+      res.status(500).json({
+        error: 'Erreur lors de l\'assignation de l\'étudiant',
+        code: 'ASSIGNMENT_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Retirer un étudiant d'une classe
+   */
+  removeStudent: async (req, res) => {
+    try {
+      const { id: classe_id, studentId: utilisateur_id } = req.params;
+
+      const eleve = await Eleve.findOne({
+        where: { utilisateur_id, classe_id }
+      });
+
+      if (!eleve) {
+        return res.status(404).json({
+          error: 'Lien étudiant-classe non trouvé',
+          code: 'ASSIGNMENT_NOT_FOUND'
+        });
+      }
+
+      // We can either set classe_id to null or delete the profile
+      // Usually, keep the profile but remove from class
+      await eleve.update({ classe_id: null });
+
+      res.json({
+        message: 'Étudiant retiré de la classe avec succès',
+        code: 'STUDENT_REMOVED'
+      });
+
+    } catch (error) {
+      console.error('Erreur désassignation étudiant:', error);
+      res.status(500).json({
+        error: 'Erreur lors du retrait de l\'étudiant',
+        code: 'REMOVAL_ERROR'
       });
     }
   }

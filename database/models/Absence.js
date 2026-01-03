@@ -10,10 +10,11 @@ const Absence = sequelize.define('Absence', {
   },
   enseignant_id: {
     type: DataTypes.UUID,
-    allowNull: false,
-    validate: {
-      notEmpty: true
-    }
+    allowNull: true
+  },
+  eleve_id: {
+    type: DataTypes.UUID,
+    allowNull: true
   },
   cours_id: {
     type: DataTypes.UUID,
@@ -31,7 +32,7 @@ const Absence = sequelize.define('Absence', {
     allowNull: false,
     validate: {
       isDate: true,
-      isAfter: function(value) {
+      isAfter: function (value) {
         if (this.date_debut && value <= this.date_debut) {
           throw new Error('La date de fin doit être après la date de début');
         }
@@ -89,16 +90,23 @@ const Absence = sequelize.define('Absence', {
     {
       fields: ['necessite_remplacement']
     }
-  ]
+  ],
+  validate: {
+    bothOrNeither() {
+      if ((this.enseignant_id === null) === (this.eleve_id === null)) {
+        throw new Error('Une absence doit être liée à soit un enseignant, soit un élève, mais pas les deux (ou aucun).');
+      }
+    }
+  }
 });
 
 // Méthodes d'instance
-Absence.prototype.valider = function() {
+Absence.prototype.valider = function () {
   this.statut = StatutAbsence.VALIDEE;
   return this.save();
 };
 
-Absence.prototype.refuser = function(raison) {
+Absence.prototype.refuser = function (raison) {
   this.statut = StatutAbsence.REFUSEE;
   if (raison) {
     this.motif += ` [Refusé: ${raison}]`;
@@ -106,23 +114,23 @@ Absence.prototype.refuser = function(raison) {
   return this.save();
 };
 
-Absence.prototype.getDureeAbsence = function() {
+Absence.prototype.getDureeAbsence = function () {
   const debut = new Date(this.date_debut);
   const fin = new Date(this.date_fin);
   const diffTime = Math.abs(fin - debut);
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 pour inclure le jour de début
 };
 
-Absence.prototype.estEnCours = function() {
+Absence.prototype.estEnCours = function () {
   const maintenant = new Date();
   return maintenant >= new Date(this.date_debut) && maintenant <= new Date(this.date_fin);
 };
 
-Absence.prototype.estFuture = function() {
+Absence.prototype.estFuture = function () {
   return new Date() < new Date(this.date_debut);
 };
 
-Absence.prototype.getInformations = function() {
+Absence.prototype.getInformations = function () {
   return {
     id: this.id,
     date_debut: this.date_debut,

@@ -96,10 +96,49 @@ const Etablissement = sequelize.define('Etablissement', {
       is: /^\d{4}-\d{4}$/
     }
   },
+  subscription_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'subscriptions',
+      key: 'id'
+    },
+    onDelete: 'SET NULL',
+    comment: 'Abonnement actif de l\'établissement'
+  },
+  limite_utilisateurs: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: {
+      min: 0
+    },
+    comment: 'Limite du nombre d\'utilisateurs (null = illimité)'
+  },
+  limite_classes: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: {
+      min: 0
+    },
+    comment: 'Limite du nombre de classes (null = illimité)'
+  },
+  limite_stockage_mb: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: {
+      min: 0
+    },
+    comment: 'Limite de stockage en MB (null = illimité)'
+  },
+  date_suspension: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    comment: 'Date de suspension pour non-paiement'
+  },
   statut: {
     type: DataTypes.ENUM(...Object.values(StatutEtablissement)),
     allowNull: false,
-    defaultValue: StatutEtablissement.ACTIVE,
+    defaultValue: StatutEtablissement.ACTIF,
     validate: {
       isIn: [Object.values(StatutEtablissement)]
     }

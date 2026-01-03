@@ -28,9 +28,20 @@ class GenerationService {
         parametres
       };
 
+      if (!cours || cours.length === 0) {
+        throw new Error("Aucun cours à planifier pour cette classe");
+      }
+      if (!salles || salles.length === 0) {
+        throw new Error("Aucune salle disponible pour la génération");
+      }
+      if (!enseignants || enseignants.length === 0) {
+        throw new Error("Aucun enseignant disponible");
+      }
+
       // Choisir l'algorithme en fonction des paramètres
-      const algorithme = this.choisirAlgorithme(parametres.mode_generation);
-      
+      const AlgorithmeClass = this.choisirAlgorithme(parametres.mode_generation);
+      const algorithme = new AlgorithmeClass();
+
       // Générer l'emploi du temps
       const resultat = await algorithme.generer(donneesGeneration);
 
@@ -38,7 +49,7 @@ class GenerationService {
 
     } catch (error) {
       console.error('Erreur génération emploi du temps:', error);
-      throw new Error(`Échec de la génération: ${error.message}`);
+      throw error; // Propagate the original error
     }
   }
 
@@ -154,10 +165,10 @@ class GenerationService {
    */
   static calculerTauxRemplissage(creneaux) {
     if (!creneaux || creneaux.length === 0) return 0;
-    
+
     const totalSlots = 5 * 8; // 5 jours × 8 créneaux par jour
     const slotsUtilises = new Set();
-    
+
     creneaux.forEach(creneau => {
       const slotKey = `${creneau.jour}-${creneau.creneau}`;
       slotsUtilises.add(slotKey);
@@ -172,7 +183,7 @@ class GenerationService {
   static calculerRespectContraintes(resultat) {
     const contraintesTotal = resultat.contraintes_evaluees?.length || 0;
     const contraintesRespectees = resultat.contraintes_respectees?.length || 0;
-    
+
     return contraintesTotal > 0 ? (contraintesRespectees / contraintesTotal) * 100 : 100;
   }
 
@@ -186,7 +197,7 @@ class GenerationService {
 
     const moyenne = charges.reduce((a, b) => a + b, 0) / charges.length;
     const variance = charges.reduce((acc, charge) => acc + Math.pow(charge - moyenne, 2), 0) / charges.length;
-    
+
     // Score basé sur l'inverse de la variance (plus c'est bas, mieux c'est)
     const score = Math.max(0, 100 - (variance * 10));
     return Math.min(100, score);
@@ -208,19 +219,19 @@ class GenerationService {
     enseignants.forEach(enseignant => {
       const chargeActuelle = enseignant.heures_actuelles;
       const chargeMax = enseignant.heures_contractuelles;
-      
+
       if (chargeActuelle >= chargeMax) {
         problems.push(`Enseignant ${enseignant.nom_complet} a atteint sa charge maximale`);
       }
     });
 
     // Vérifier les salles spécialisées
-    const coursSpeciaux = cours.filter(c => 
-      c.matiere.type_cours === TypeCours.TP || 
+    const coursSpeciaux = cours.filter(c =>
+      c.matiere.type_cours === TypeCours.TP ||
       c.matiere.necessite_equipement_special
     );
 
-    const sallesSpecialisees = salles.filter(s => 
+    const sallesSpecialisees = salles.filter(s =>
       s.type_salle !== 'standard'
     );
 
@@ -229,11 +240,11 @@ class GenerationService {
     }
 
     // Vérifier les disponibilités
-    const totalHeuresNecessaires = cours.reduce((total, c) => 
+    const totalHeuresNecessaires = cours.reduce((total, c) =>
       total + c.volume_horaire_hebdo, 0
     );
 
-    const heuresDisponibles = enseignants.reduce((total, e) => 
+    const heuresDisponibles = enseignants.reduce((total, e) =>
       total + (e.heures_contractuelles - e.heures_actuelles), 0
     );
 
@@ -261,7 +272,7 @@ class GenerationService {
     // Implémentation de l'optimisation
     // Cette méthode pourrait réorganiser les créneaux pour améliorer le score
     // en respectant les contraintes supplémentaires
-    
+
     throw new Error('Non implémenté');
   }
 }

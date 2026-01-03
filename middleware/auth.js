@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
-const { Utilisateur, Etablissement, Enseignant } = require('../database/models');
+const { Utilisateur, Etablissement, Enseignant, Accreditation } = require('../database/models');
+const { Op } = require('sequelize');
 const config = require('../config/config');
 const AuthService = require('../services/authService');
 const { RoleUtilisateur } = require('../utils/enums');
@@ -27,10 +28,28 @@ const authenticateToken = async (req, res, next) => {
       attributes: {
         exclude: ['mot_de_passe_hash']
       },
-      include: [{
-        association: 'etablissement',
-        attributes: ['id', 'nom', 'type', 'statut']
-      }]
+      include: [
+        {
+          association: 'etablissement',
+          attributes: ['id', 'nom', 'type', 'statut']
+        },
+        {
+          association: 'enseignant',
+          attributes: ['id', 'etablissement_id']
+        },
+        {
+          association: 'eleve',
+          attributes: ['id', 'classe_id', 'etablissement_id']
+        },
+        {
+          association: 'directeur',
+          attributes: ['id', 'etablissement_id']
+        },
+        {
+          association: 'responsablePedagogique',
+          attributes: ['id', 'etablissement_id']
+        }
+      ]
     });
 
     if (!utilisateur) {
@@ -136,6 +155,54 @@ const requireRole = (roles) => {
     }
 
     next();
+  };
+};
+
+/**
+ * Middleware de vérification d'accès à un module (Rôle ou Accréditation)
+ */
+const requireModuleAccess = (moduleName, defaultRoles = []) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.utilisateur) {
+        return res.status(401).json({
+          error: 'Authentification requise',
+          code: 'AUTH_REQUIRED'
+        });
+      }
+
+      // 1. Vérifier si le rôle de base autorise l'accès
+      if (defaultRoles.includes(req.utilisateur.role) || req.utilisateur.role === RoleUtilisateur.ADMIN) {
+        return next();
+      }
+
+      // 2. Vérifier si l'utilisateur a une accréditation valide pour ce module
+      const now = new Date();
+      const accreditation = await Accreditation.findOne({
+        where: {
+          utilisateur_id: req.utilisateur.id,
+          module: moduleName,
+          statut: 'actif',
+          date_debut: { [Op.lte]: now },
+          date_fin: { [Op.gte]: now }
+        }
+      });
+
+      if (accreditation) {
+        return next();
+      }
+
+      return res.status(403).json({
+        error: `Vous n'avez pas l'accréditation nécessaire pour accéder au module ${moduleName}`,
+        code: 'INSUFFICIENT_MODULE_PERMISSIONS'
+      });
+    } catch (error) {
+      console.error('Erreur vérification accès module:', error);
+      res.status(500).json({
+        error: 'Erreur de vérification des permissions',
+        code: 'MODULE_PERMISSIONS_CHECK_ERROR'
+      });
+    }
   };
 };
 
@@ -517,5 +584,7 @@ module.exports = {
   generateTempToken,
   logAccess,
   requireRoleOrSelfEnseignant,
-  requireEtablissementAccessCode
+  requireEtablissementAccessCode,
+  resolveEnseignantId,
+  requireModuleAccess
 };

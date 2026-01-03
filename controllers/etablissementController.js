@@ -10,11 +10,11 @@ const etablissementController = {
    */
   getAllEtablissements: async (req, res) => {
     try {
-      const { page = 1, limit = 10, type, statut, search } = req.query;
+      const { page = 1, limit = 100, type, statut, search } = req.query;
       const offset = (page - 1) * limit;
 
       const whereClause = {};
-      
+
       if (type) {
         whereClause.type = type;
       }
@@ -25,8 +25,8 @@ const etablissementController = {
 
       if (search) {
         whereClause[Op.or] = [
-          { nom: { [Op.iLike]: `%${search}%` } },
-          { ville: { [Op.iLike]: `%${search}%` } }
+          { nom: { [Op.like]: `%${search}%` } },
+          { ville: { [Op.like]: `%${search}%` } }
         ];
       }
 

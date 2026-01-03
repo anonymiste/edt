@@ -11,36 +11,45 @@ UserRouter.use(authenticateToken);
 UserRouter.use(logAccess('users'));
 
 // Routes accessibles aux administrateurs et directeurs
-UserRouter.get('/', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]), 
+UserRouter.get('/',
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
   queryValidation.pagination,
   handleValidationErrors,
   userController.getAllUsers
 );
 
-UserRouter.get('/stats', 
-  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]), 
+UserRouter.get('/stats',
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
   userController.getUserStats
 );
 
-UserRouter.post('/', 
+UserRouter.post('/',
   requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
   requireEtablissementAccessCode,
   userController.createUser
 );
 
+// Route recherche pour le chat (publique interne)
+UserRouter.get('/search',
+  userController.searchUsers
+);
+
+UserRouter.get('/directory',
+  userController.getDirectory
+);
+
 // Routes accessibles à tous les utilisateurs authentifiés
-UserRouter.get('/:id', 
+UserRouter.get('/:id',
   userController.getUserById
 );
 
-UserRouter.put('/:id', 
+UserRouter.put('/:id',
   requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR]),
   requireEtablissementAccessCode,
   userController.updateUser
 );
 
-UserRouter.delete('/:id', 
+UserRouter.delete('/:id',
   requireRole([RoleUtilisateur.ADMIN]),
   requireEtablissementAccessCode,
   userController.deleteUser

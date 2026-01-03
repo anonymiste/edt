@@ -108,9 +108,7 @@ const Matiere = sequelize.define('Matiere', {
     {
       fields: ['etablissement_id']
     },
-    {
-      fields: ['code_matiere']
-    },
+
     {
       fields: ['categorie']
     },
@@ -121,15 +119,15 @@ const Matiere = sequelize.define('Matiere', {
 });
 
 // Méthodes d'instance
-Matiere.prototype.estFondamentale = function() {
+Matiere.prototype.estFondamentale = function () {
   return this.categorie === CategorieMatiere.FONDAMENTALE;
 };
 
-Matiere.prototype.estOptionnelle = function() {
+Matiere.prototype.estOptionnelle = function () {
   return this.categorie === CategorieMatiere.OPTION;
 };
 
-Matiere.prototype.getInformations = function() {
+Matiere.prototype.getInformations = function () {
   return {
     id: this.id,
     nom_matiere: this.nom_matiere,

@@ -11,11 +11,11 @@ const matiereController = {
    */
   getAllMatieres: async (req, res) => {
     try {
-      const { page = 1, limit = 10, categorie, type_cours, search } = req.query;
+      const { page = 1, limit = 100, categorie, type_cours, search } = req.query;
       const offset = (page - 1) * limit;
 
       const whereClause = applyEtablissementScope(req, {});
-      
+
       if (categorie) {
         whereClause.categorie = categorie;
       }
@@ -26,8 +26,8 @@ const matiereController = {
 
       if (search) {
         whereClause[Op.or] = [
-          { nom_matiere: { [Op.iLike]: `%${search}%` } },
-          { code_matiere: { [Op.iLike]: `%${search}%` } }
+          { nom_matiere: { [Op.like]: `%${search}%` } },
+          { code_matiere: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -160,10 +160,10 @@ const matiereController = {
       }
 
       // Vérifier si le code matière existe déjà
-      const existingMatiere = await Matiere.findOne({ 
-        where: applyEtablissementScope(req, { 
+      const existingMatiere = await Matiere.findOne({
+        where: applyEtablissementScope(req, {
           code_matiere: code_matiere.toUpperCase()
-        }) 
+        })
       });
 
       if (existingMatiere) {
@@ -237,12 +237,12 @@ const matiereController = {
 
       // Vérifier si le nouveau code existe déjà (sauf pour cette matière)
       if (updates.code_matiere && updates.code_matiere !== matiere.code_matiere) {
-        const existingMatiere = await Matiere.findOne({ 
-          where: { 
+        const existingMatiere = await Matiere.findOne({
+          where: {
             code_matiere: updates.code_matiere,
             etablissement_id: matiere.etablissement_id,
             id: { [Op.ne]: id }
-          } 
+          }
         });
 
         if (existingMatiere) {
@@ -291,9 +291,9 @@ const matiereController = {
 
       // Vérifier que tous les enseignants existent dans le même établissement
       const enseignants = await Enseignant.findAll({
-        where: { 
+        where: {
           id: enseignant_ids,
-          etablissement_id: matiere.etablissement_id 
+          etablissement_id: matiere.etablissement_id
         }
       });
 
@@ -346,7 +346,7 @@ const matiereController = {
       ] = await Promise.all([
         Cours.count({ where: { matiere_id: id } }),
         matiere.countEnseignants(),
-        Cours.count({ 
+        Cours.count({
           where: { matiere_id: id },
           distinct: true,
           col: 'classe_id'

@@ -7,15 +7,19 @@ const { authenticateToken, logAccess } = require('../middleware/auth');
 
 // Routes publiques
 router.use(logAccess('auth'));
-router.post('/register', 
-  authValidation.register, 
-  handleValidationErrors, 
+router.post('/register',
+  authValidation.register,
+  handleValidationErrors,
   authController.register
 );
 
-router.post('/login', 
-  authValidation.login, 
-  handleValidationErrors, 
+router.get('/etablissement-public-info/:accessCode',
+  authController.getEtablissementPublicInfo
+);
+
+router.post('/login',
+  authValidation.login,
+  handleValidationErrors,
   authController.login
 );
 
@@ -25,25 +29,25 @@ router.post('/verify-2fa',
 );
 
 // Routes protégées
-router.get('/profile', 
-  authenticateToken, 
+router.get('/profile',
+  authenticateToken,
   authController.getProfile
 );
 
-router.put('/profile', 
-  authenticateToken, 
+router.put('/profile',
+  authenticateToken,
   authController.updateProfile
 );
 
-router.post('/change-password', 
-  authenticateToken, 
-  authValidation.changePassword, 
-  handleValidationErrors, 
+router.post('/change-password',
+  authenticateToken,
+  authValidation.changePassword,
+  handleValidationErrors,
   authController.changePassword
 );
 
-router.post('/refresh-token', 
-  authenticateToken, 
+router.post('/refresh-token',
+  authenticateToken,
   authController.refreshToken
 );
 
@@ -56,6 +60,17 @@ router.post('/setup-2fa',
 router.post('/activate-2fa',
   authenticateToken,
   authController.activate2FA
+);
+
+const upload = require('../middleware/upload');
+
+// ... existing routes ...
+
+// Upload Avatar
+router.post('/avatar',
+  authenticateToken,
+  upload.single('avatar'),
+  authController.uploadAvatar
 );
 
 module.exports = router;

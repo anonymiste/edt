@@ -10,8 +10,11 @@ class NotificationController {
    */
   static async getMyNotifications(req, res) {
     try {
-      const utilisateurId = req.user.id;
-      const { page = 1, limit = 20, lue } = req.query;
+      const utilisateurId = req.utilisateur.id;
+      let { page = 1, limit = 20, lue } = req.query;
+
+      page = parseInt(page) || 1;
+      limit = parseInt(limit) || 20;
 
       const offset = (page - 1) * limit;
 
@@ -20,28 +23,39 @@ class NotificationController {
         whereClause.lue = lue === 'true';
       }
 
+      console.log('Fetching notifications for user:', utilisateurId, 'Params:', { page, limit, offset, whereClause });
+
       const notifications = await Notification.findAndCountAll({
         where: whereClause,
         order: [['date_envoi', 'DESC']],
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: limit,
+        offset: offset
+      });
+
+      const unreadCount = await Notification.count({
+        where: {
+          utilisateur_id: utilisateurId,
+          lue: false
+        }
       });
 
       res.json({
         success: true,
         data: notifications.rows,
+        unreadCount,
         pagination: {
           total: notifications.count,
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: page,
+          limit: limit,
           pages: Math.ceil(notifications.count / limit)
         }
       });
     } catch (error) {
-      console.error('Erreur récupération notifications:', error);
+      console.error('CRITICAL ERROR in getMyNotifications:', error);
       res.status(500).json({
         success: false,
-        message: 'Erreur lors de la récupération des notifications'
+        message: 'Erreur lors de la récupération des notifications',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
@@ -52,7 +66,7 @@ class NotificationController {
   static async getNotificationById(req, res) {
     try {
       const { id } = req.params;
-      const utilisateurId = req.user.id;
+      const utilisateurId = req.utilisateur.id;
 
       const notification = await Notification.findOne({
         where: {
@@ -134,7 +148,7 @@ class NotificationController {
   static async markAsRead(req, res) {
     try {
       const { id } = req.params;
-      const utilisateurId = req.user.id;
+      const utilisateurId = req.utilisateur.id;
 
       const notification = await Notification.findOne({
         where: {
@@ -170,7 +184,7 @@ class NotificationController {
    */
   static async markAllAsRead(req, res) {
     try {
-      const utilisateurId = req.user.id;
+      const utilisateurId = req.utilisateur.id;
 
       await Notification.update(
         { lue: true },
@@ -201,7 +215,7 @@ class NotificationController {
   static async deleteNotification(req, res) {
     try {
       const { id } = req.params;
-      const utilisateurId = req.user.id;
+      const utilisateurId = req.utilisateur.id;
 
       const notification = await Notification.findOne({
         where: {
@@ -237,7 +251,7 @@ class NotificationController {
    */
   static async getUnreadCount(req, res) {
     try {
-      const utilisateurId = req.user.id;
+      const utilisateurId = req.utilisateur.id;
 
       const count = await Notification.count({
         where: {

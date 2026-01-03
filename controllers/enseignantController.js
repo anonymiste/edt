@@ -33,7 +33,7 @@ const enseignantController = {
    */
   getAllEnseignants: async (req, res) => {
     try {
-      const { page = 1, limit = 10, statut, search } = req.query;
+      const { page = 1, limit = 100, statut, search } = req.query;
       const offset = (page - 1) * limit;
       const scopedEtablissementId = resolveScopedEtablissementId(req);
 
@@ -44,16 +44,16 @@ const enseignantController = {
         });
       }
       const whereClause = applyEtablissementScope(req, {});
-      
+
       if (statut) {
         whereClause.statut = statut;
       }
 
       if (search) {
         whereClause[Op.or] = [
-          { '$utilisateur.nom$': { [Op.iLike]: `%${search}%` } },
-          { '$utilisateur.prenom$': { [Op.iLike]: `%${search}%` } },
-          { matricule: { [Op.iLike]: `%${search}%` } }
+          { '$utilisateur.nom$': { [Op.like]: `%${search}%` } },
+          { '$utilisateur.prenom$': { [Op.like]: `%${search}%` } },
+          { matricule: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -172,7 +172,7 @@ const enseignantController = {
         });
       }
       console.log(req.body);
-      
+
 
       const {
         utilisateur_id,
@@ -204,11 +204,11 @@ const enseignantController = {
       }
 
       // Vérifier si le matricule existe déjà dans l'établissement ciblé
-      const existingEnseignant = await Enseignant.findOne({ 
-        where: { 
+      const existingEnseignant = await Enseignant.findOne({
+        where: {
           matricule,
           ...(targetEtablissementId ? { etablissement_id: targetEtablissementId } : {})
-        } 
+        }
       });
 
       if (existingEnseignant) {
@@ -220,7 +220,7 @@ const enseignantController = {
 
       // Vérifier que l'utilisateur existe
       const utilisateur = await Utilisateur.findOne({
-        where: { 
+        where: {
           id: utilisateur_id,
           ...(targetEtablissementId ? { etablissement_id: targetEtablissementId } : {})
         }
@@ -293,9 +293,12 @@ const enseignantController = {
       const { id } = req.params;
       const updates = req.body;
 
-      const enseignant = await Enseignant.findOne({
-        where: applyEtablissementScope(req, { id })
-      });
+      const whereClause = { id };
+      if (!isAdminSystem(req.utilisateur)) {
+        whereClause.etablissement_id = req.utilisateur.etablissement_id;
+      }
+
+      const enseignant = await Enseignant.findOne({ where: whereClause });
 
       if (!enseignant) {
         return res.status(404).json({
@@ -306,12 +309,12 @@ const enseignantController = {
 
       // Vérifier si le nouveau matricule existe déjà (sauf pour cet enseignant)
       if (updates.matricule && updates.matricule !== enseignant.matricule) {
-        const existingEnseignant = await Enseignant.findOne({ 
-          where: { 
+        const existingEnseignant = await Enseignant.findOne({
+          where: {
             matricule: updates.matricule,
             etablissement_id: enseignant.etablissement_id,
             id: { [Op.ne]: id }
-          } 
+          }
         });
 
         if (existingEnseignant) {
@@ -370,9 +373,9 @@ const enseignantController = {
 
       // Vérifier que toutes les matières existent dans le même établissement
       const matieres = await Matiere.findAll({
-        where: { 
+        where: {
           id: matiere_ids,
-          etablissement_id: enseignant.etablissement_id 
+          etablissement_id: enseignant.etablissement_id
         }
       });
 
@@ -433,7 +436,7 @@ const enseignantController = {
       }
 
       const whereClause = { enseignant_id: id };
-      
+
       if (date_debut && date_fin) {
         whereClause[Op.and] = [
           { date_fin_validite: { [Op.gte]: date_debut } },
@@ -522,7 +525,7 @@ const enseignantController = {
       ] = await Promise.all([
         Cours.count({ where: { enseignant_id: id } }),
         enseignant.countMatieres(),
-        Cours.count({ 
+        Cours.count({
           where: { enseignant_id: id },
           distinct: true,
           col: 'classe_id'
@@ -554,9 +557,9 @@ const enseignantController = {
       });
     }
   },
-    /**
-   * Obtenir les disponibilités d'un enseignant
-   */
+  /**
+ * Obtenir les disponibilités d'un enseignant
+ */
   getDisponibilites: async (req, res) => {
     try {
       const { id } = req.params;

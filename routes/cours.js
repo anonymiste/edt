@@ -12,39 +12,44 @@ router.use(logAccess('cours'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [
-  RoleUtilisateur.ADMIN, 
-  RoleUtilisateur.DIRECTEUR, 
+  RoleUtilisateur.ADMIN,
+  RoleUtilisateur.DIRECTEUR,
   RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE
 ];
 
-router.get('/', 
-  requireRole(rolesAutorises), 
+// Route pour les enseignants - Mes cours
+router.get('/me',
+  requireRole([...rolesAutorises, RoleUtilisateur.ENSEIGNANT, RoleUtilisateur.ETUDIANT]),
+  coursController.getMesCours
+);
+
+router.get('/',
+  requireRole(rolesAutorises),
   queryValidation.pagination,
   handleValidationErrors,
   coursController.getAllCours
 );
 
-router.post('/', 
+router.post('/',
   requireRole(rolesAutorises),
-  requireEtablissementAccessCode,
   coursController.createCours
 );
 
 // Routes accessibles à tous les utilisateurs authentifiés de l'établissement
-router.get('/:id', 
+router.get('/:id',
   coursController.getCoursById
 );
 
-router.get('/:id/slots', 
+router.get('/:id/slots',
   coursController.getCreneaux
 );
 
-router.get('/:id/stats', 
+router.get('/:id/stats',
   coursController.getCoursStats
 );
 
 // Routes accessibles aux rôles autorisés seulement
-router.put('/:id', 
+router.put('/:id',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   coursController.updateCours

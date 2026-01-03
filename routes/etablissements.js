@@ -12,7 +12,7 @@ router.use(logAccess('etablissements'));
 
 // Routes accessibles aux administrateurs seulement
 router.get('/', 
-  requireRole([RoleUtilisateur.ADMIN]), 
+  requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]), 
   queryValidation.pagination,
   handleValidationErrors,
   etablissementController.getAllEtablissements

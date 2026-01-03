@@ -41,7 +41,7 @@ const Enseignant = sequelize.define('Enseignant', {
   },
   date_embauche: {
     type: DataTypes.DATEONLY,
-    allowNull: true,
+    allowNull: false,
     validate: {
       isDate: true,
       isBefore: new Date().toISOString().split('T')[0]
@@ -93,15 +93,7 @@ const Enseignant = sequelize.define('Enseignant', {
     }
   },
   indexes: [
-    {
-      fields: ['utilisateur_id']
-    },
-    {
-      fields: ['etablissement_id']
-    },
-    {
-      fields: ['matricule']
-    },
+
     {
       fields: ['statut']
     }
@@ -109,21 +101,21 @@ const Enseignant = sequelize.define('Enseignant', {
 });
 
 // Méthodes d'instance
-Enseignant.prototype.getHeuresContractuellesFormattees = function() {
+Enseignant.prototype.getHeuresContractuellesFormattees = function () {
   const heures = Math.floor(this.heures_contractuelles_hebdo / 60);
   const minutes = this.heures_contractuelles_hebdo % 60;
   return minutes > 0 ? `${heures}h${minutes}` : `${heures}h`;
 };
 
-Enseignant.prototype.estTitulaire = function() {
+Enseignant.prototype.estTitulaire = function () {
   return this.statut === StatutProfessionnel.TITULAIRE;
 };
 
-Enseignant.prototype.estVacataire = function() {
+Enseignant.prototype.estVacataire = function () {
   return this.statut === StatutProfessionnel.VACATAIRE;
 };
 
-Enseignant.prototype.getInformations = function() {
+Enseignant.prototype.getInformations = function () {
   return {
     id: this.id,
     matricule: this.matricule,

@@ -1,13 +1,60 @@
 // controllers/authController.js
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { Utilisateur, Etablissement, LogConnexion } = require('../database/models');
+const { Utilisateur, Etablissement, LogConnexion, Enseignant, Eleve, Directeur, ResponsablePedagogique, Classe } = require('../database/models');
 const config = require('../config/config');
 const { validationResult } = require('express-validator');
-const { RoleUtilisateur, StatutConnexion } = require('../utils/enums');
+const { RoleUtilisateur, StatutConnexion, StatutProfessionnel, StatutClasse, StatutEtablissement } = require('../utils/enums');
 const AuthService = require('../services/authService');
 
 const authController = {
+  /**
+   * Récupère les informations publiques d'un établissement via son code d'accès
+   * Utile pour l'inscription des étudiants pour choisir leur classe
+   */
+  getEtablissementPublicInfo: async (req, res) => {
+    try {
+      const { accessCode } = req.params;
+
+      const etablissement = await Etablissement.findOne({
+        where: {
+          code_acces: accessCode.toUpperCase().trim(),
+          statut: StatutEtablissement.ACTIF
+        },
+        attributes: ['id', 'nom', 'type', 'ville']
+      });
+
+      if (!etablissement) {
+        return res.status(404).json({
+          error: 'Établissement non trouvé ou code invalide',
+          code: 'ETABLISSEMENT_NOT_FOUND'
+        });
+      }
+
+      // Récupérer les classes de cet établissement
+      const classes = await Classe.findAll({
+        where: {
+          etablissement_id: etablissement.id,
+          statut: StatutClasse.ACTIVE
+        },
+        attributes: ['id', 'nom_classe', 'niveau', 'annee_scolaire'],
+        order: [['nom_classe', 'ASC']]
+      });
+
+      res.json({
+        etablissement,
+        classes,
+        code: 'PUBLIC_INFO_SUCCESS'
+      });
+    } catch (error) {
+      console.error('Erreur récupération infos publiques:', error);
+      res.status(500).json({
+        error: 'Erreur serveur',
+        code: 'SERVER_ERROR'
+      });
+    }
+  },
+
   /**
    * Inscription d'un nouvel utilisateur
    */
@@ -22,7 +69,7 @@ const authController = {
       //   });
       // }
 
-      const { email, password, nom, prenom, role, telephone, etablissement_id } = req.body;
+      const { email, password, nom, prenom, role, telephone, etablissement_id, classe_id } = req.body;
 
       // Vérifier si l'utilisateur existe déjà
       const existingUser = await Utilisateur.findOne({ where: { email } });
@@ -33,9 +80,25 @@ const authController = {
         });
       }
 
-      // Vérifier l'établissement si fourni
-      if (etablissement_id) {
-        const etablissement = await Etablissement.findByPk(etablissement_id);
+      // Vérifier l'établissement si fourni par code d'accès
+      let targetEtablissementId = etablissement_id;
+      if (req.body.code_acces_etablissement) {
+        const etablissement = await Etablissement.findOne({
+          where: { code_acces: req.body.code_acces_etablissement.toUpperCase().trim() }
+        });
+
+        if (!etablissement) {
+          return res.status(404).json({
+            error: 'Code d\'accès établissement invalide',
+            code: 'INVALID_ACCESS_CODE'
+          });
+        }
+        targetEtablissementId = etablissement.id;
+      }
+
+      // Vérifier l'établissement si fourni par ID directement (fallback)
+      if (targetEtablissementId) {
+        const etablissement = await Etablissement.findByPk(targetEtablissementId);
         if (!etablissement) {
           return res.status(404).json({
             error: 'Établissement non trouvé',
@@ -55,106 +118,113 @@ const authController = {
         RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE
       ];
 
-      // Créer l'utilisateur avec activation 2FA si nécessaire
-      const utilisateurData = {
+      // Créer l'utilisateur
+      const utilisateur = await Utilisateur.create({
         email,
         mot_de_passe_hash: motDePasseHash,
         nom,
         prenom,
         role,
         telephone,
-        etablissement_id,
-        etablissement_id,
-        deux_fa_active: false // Sera activé après vérification du code
-      };
+        etablissement_id: targetEtablissementId,
+        deux_fa_active: false
+      });
+
+      // Créer le profil spécifique selon le rôle
+      const matricule = `MAT-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
+
+      if (targetEtablissementId) {
+        try {
+          if (role === RoleUtilisateur.ENSEIGNANT) {
+            await Enseignant.create({
+              utilisateur_id: utilisateur.id,
+              etablissement_id: targetEtablissementId,
+              matricule,
+              statut: StatutProfessionnel.VACATAIRE,
+              date_embauche: new Date(),
+              heures_contractuelles_hebdo: 1080 // 18h par défaut
+            });
+          } else if (role === RoleUtilisateur.ETUDIANT) {
+            await Eleve.create({
+              utilisateur_id: utilisateur.id,
+              etablissement_id: targetEtablissementId,
+              matricule,
+              classe_id: classe_id || null
+            });
+          } else if (role === RoleUtilisateur.DIRECTEUR) {
+            await Directeur.create({
+              utilisateur_id: utilisateur.id,
+              etablissement_id: targetEtablissementId,
+              matricule,
+              date_nomination: new Date()
+            });
+          } else if (role === RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE) {
+            await ResponsablePedagogique.create({
+              utilisateur_id: utilisateur.id,
+              etablissement_id: targetEtablissementId,
+              matricule,
+              date_prise_fonction: new Date()
+            });
+          }
+        } catch (profileError) {
+          console.error('Erreur creation profil spécifique:', profileError);
+          // On continue quand même, l'utilisateur est créé
+        }
+      }
 
       // Si le rôle nécessite la 2FA, générer un secret
       if (rolesRequiring2FA.includes(role)) {
         const twoFASecret = AuthService.generate2FASecret({ email });
-        utilisateurData.deux_fa_secret = twoFASecret.secret;
+        await utilisateur.update({ deux_fa_secret: twoFASecret.secret });
 
         // Générer le QR Code
         const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
 
-        // Créer l'utilisateur
-        const utilisateur = await Utilisateur.create(utilisateurData);
-
         // Journaliser la création de compte
         await LogConnexion.create({
           utilisateur_id: utilisateur.id,
           adresse_ip: req.ip,
           user_agent: req.get('User-Agent'),
-          statut: StatutConnexion.SUCCES,
-          pays: null,
-          ville: null
+          statut: StatutConnexion.SUCCES
         });
 
         // Générer le token JWT
         const token = jwt.sign(
-          {
-            id: utilisateur.id,
-            email: utilisateur.email,
-            role: utilisateur.role
-          },
-          config.jwt.secret,
-          { expiresIn: config.jwt.expiresIn }
-        )
-
-        res.status(201).json({
-          message: 'Utilisateur créé avec succès. La 2FA est requise pour ce rôle.',
-          token: token, // Pas de token immédiat car 2FA requise
-          utilisateur: {
-            id: utilisateur.id,
-            email: utilisateur.email,
-            nom: utilisateur.nom,
-            prenom: utilisateur.prenom,
-            role: utilisateur.role,
-            etablissement_id: utilisateur.etablissement_id,
-            etablissement_id: utilisateur.etablissement_id,
-            deux_fa_active: false,
-            deux_fa_setup_required: true,
-            qr_code_url: qrCodeUrl, // Retourner le QR Code pour configuration
-            secret: twoFASecret.secret // Pour développement/test seulement
-          },
-          code: 'REGISTRATION_SUCCESS_2FA_REQUIRED'
-        });
-      } else {
-        // Pour les rôles ne nécessitant pas la 2FA, créer un token normal
-        const utilisateur = await Utilisateur.create(utilisateurData);
-
-        // Générer le token JWT
-        const token = jwt.sign(
-          {
-            id: utilisateur.id,
-            email: utilisateur.email,
-            role: utilisateur.role
-          },
+          { id: utilisateur.id, email: utilisateur.email, role: utilisateur.role },
           config.jwt.secret,
           { expiresIn: config.jwt.expiresIn }
         );
 
-        // Journaliser la création de compte
+        return res.status(201).json({
+          message: 'Utilisateur créé avec succès. La 2FA est requise.',
+          token,
+          utilisateur: {
+            ...utilisateur.toJSON(),
+            deux_fa_setup_required: true,
+            qr_code_url: qrCodeUrl,
+            secret: twoFASecret.secret
+          },
+          code: 'REGISTRATION_SUCCESS_2FA_REQUIRED'
+        });
+      } else {
+        // Pour les rôles ne nécessitant pas la 2FA
+        const token = jwt.sign(
+          { id: utilisateur.id, email: utilisateur.email, role: utilisateur.role },
+          config.jwt.secret,
+          { expiresIn: config.jwt.expiresIn }
+        );
+
         await LogConnexion.create({
           utilisateur_id: utilisateur.id,
           adresse_ip: req.ip,
           user_agent: req.get('User-Agent'),
-          statut: StatutConnexion.SUCCES,
-          pays: null,
-          ville: null
+          statut: StatutConnexion.SUCCES
         });
 
-        res.status(201).json({
+        return res.status(201).json({
           message: 'Utilisateur créé avec succès',
           token,
-          utilisateur: {
-            id: utilisateur.id,
-            email: utilisateur.email,
-            nom: utilisateur.nom,
-            prenom: utilisateur.prenom,
-            role: utilisateur.role,
-            etablissement_id: utilisateur.etablissement_id,
-            deux_fa_active: false
-          },
+          utilisateur: utilisateur.toJSON(),
           code: 'REGISTRATION_SUCCESS'
         });
       }
@@ -190,31 +260,25 @@ const authController = {
         where: { email },
         include: [{
           association: 'etablissement',
-          attributes: ['id', 'nom', 'type', 'statut']
+          attributes: ['id', 'nom', 'type', 'statut', 'code_acces']
         }]
       });
 
-      // Journaliser la tentative de connexion
+      // Vérifier le mot de passe
+      const isPasswordValid = utilisateur ? await bcrypt.compare(password, utilisateur.mot_de_passe_hash) : false;
+
+      // Journaliser la tentative de connexion (après vérification du mot de passe pour le statut réel)
       await LogConnexion.create({
         utilisateur_id: utilisateur?.id || null,
         adresse_ip: req.ip,
         user_agent: req.get('User-Agent'),
-        statut: utilisateur ? StatutConnexion.SUCCES : StatutConnexion.ECHEC,
-        mot_de_passe_tente: password.substring(0, 3) + '***',
+        statut: (utilisateur && isPasswordValid) ? StatutConnexion.SUCCES : StatutConnexion.ECHEC,
+        mot_de_passe_tente: password ? (password.substring(0, 3) + '***') : null,
         pays: null,
         ville: null
       });
 
-      if (!utilisateur) {
-        return res.status(401).json({
-          error: 'Email ou mot de passe incorrect',
-          code: 'INVALID_CREDENTIALS'
-        });
-      }
-
-      // Vérifier le mot de passe
-      const isPasswordValid = await bcrypt.compare(password, utilisateur.mot_de_passe_hash);
-      if (!isPasswordValid) {
+      if (!utilisateur || !isPasswordValid) {
         return res.status(401).json({
           error: 'Email ou mot de passe incorrect',
           code: 'INVALID_CREDENTIALS'
@@ -505,7 +569,7 @@ const authController = {
         attributes: { exclude: ['mot_de_passe_hash', 'deux_fa_secret'] },
         include: [{
           association: 'etablissement',
-          attributes: ['id', 'nom', 'type', 'ville', 'statut']
+          attributes: ['id', 'nom', 'type', 'ville', 'statut', 'code_acces']
         }]
       });
 
@@ -579,8 +643,7 @@ const authController = {
       const isCurrentPasswordValid = await bcrypt.compare(currentPassword, utilisateur.mot_de_passe_hash);
       if (!isCurrentPasswordValid) {
         return res.status(401).json({
-          error: 'Mot de passe actuel incorrect',
-          code: 'INVALID_CURRENT_PASSWORD'
+          error: 'Le mot de passe actuel est incorrect. Veuillez réessayer.'
         });
       }
 
@@ -592,15 +655,13 @@ const authController = {
       await utilisateur.update({ mot_de_passe_hash: newPasswordHash });
 
       res.json({
-        message: 'Mot de passe modifié avec succès',
-        code: 'PASSWORD_CHANGED'
+        message: 'Mot de passe modifié avec succès'
       });
 
     } catch (error) {
       console.error('Erreur changement mot de passe:', error);
       res.status(500).json({
-        error: 'Erreur lors du changement de mot de passe',
-        code: 'PASSWORD_CHANGE_ERROR'
+        error: 'Erreur lors du changement de mot de passe'
       });
     }
   },
@@ -634,6 +695,41 @@ const authController = {
       res.status(500).json({
         error: 'Erreur lors du rafraîchissement du token',
         code: 'TOKEN_REFRESH_ERROR'
+      });
+    }
+  },
+
+  /**
+   * Upload de la photo de profil
+   */
+  uploadAvatar: async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          error: 'Veuillez sélectionner une image pour votre photo de profil.'
+        });
+      }
+
+      // Construction de l'URL relative
+      // Note: req.file.filename est généré par multer
+      const relativePath = `/uploads/avatars/${req.file.filename}`;
+
+      // Mise à jour de l'utilisateur
+      await Utilisateur.update(
+        { photo_url: relativePath },
+        { where: { id: req.utilisateur.id } }
+      );
+
+      res.json({
+        message: 'Photo de profil mise à jour avec succès',
+        photo_url: relativePath
+      });
+
+    } catch (error) {
+      console.error('Erreur upload avatar:', error);
+      res.status(500).json({
+        error: 'Erreur lors du téléchargement de la photo',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }

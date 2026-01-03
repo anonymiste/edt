@@ -65,7 +65,7 @@ const Rattrapage = sequelize.define('Rattrapage', {
     allowNull: true,
     validate: {
       isDate: true,
-      isAfter: function(value) {
+      isAfter: function (value) {
         if (this.periode_souhaitee_debut && value <= this.periode_souhaitee_debut) {
           throw new Error('La date de fin doit être après la date de début');
         }
@@ -87,13 +87,28 @@ const Rattrapage = sequelize.define('Rattrapage', {
   commentaires: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  session_examen_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'Pour rattrapages d\'examens'
+  },
+  note_obtenue: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    comment: 'Note obtenue lors du rattrapage d\'examen'
+  },
+  motif_rattrapage: {
+    type: DataTypes.ENUM('ABSENCE', 'ECHEC', 'AUTRE'),
+    allowNull: true,
+    comment: 'Raison du rattrapage d\'examen'
   }
 }, {
   tableName: 'rattrapages',
   hooks: {
     beforeUpdate: (rattrapage) => {
       rattrapage.updated_at = new Date();
-      
+
       // Mettre à jour les dates selon le statut
       if (rattrapage.changed('statut')) {
         if (rattrapage.statut === StatutRattrapage.PLANIFIE && !rattrapage.date_planification) {
@@ -122,25 +137,25 @@ const Rattrapage = sequelize.define('Rattrapage', {
 });
 
 // Méthodes d'instance
-Rattrapage.prototype.planifier = function(creneauId) {
+Rattrapage.prototype.planifier = function (creneauId) {
   this.statut = StatutRattrapage.PLANIFIE;
   this.creneau_planifie_id = creneauId;
   this.date_planification = new Date();
   return this.save();
 };
 
-Rattrapage.prototype.marquerRealise = function() {
+Rattrapage.prototype.marquerRealise = function () {
   this.statut = StatutRattrapage.REALISE;
   this.date_realisation = new Date();
   return this.save();
 };
 
-Rattrapage.prototype.annuler = function() {
+Rattrapage.prototype.annuler = function () {
   this.statut = StatutRattrapage.ANNULE;
   return this.save();
 };
 
-Rattrapage.prototype.estUrgent = function() {
+Rattrapage.prototype.estUrgent = function () {
   // Un rattrapage est urgent s'il a été demandé il y a plus de 7 jours
   const dateDemande = new Date(this.date_demande);
   const aujourdHui = new Date();
@@ -149,7 +164,7 @@ Rattrapage.prototype.estUrgent = function() {
   return diffDays > 7 && this.statut === StatutRattrapage.DEMANDE;
 };
 
-Rattrapage.prototype.getInformations = function() {
+Rattrapage.prototype.getInformations = function () {
   return {
     id: this.id,
     type_rattrapage: this.type_rattrapage,

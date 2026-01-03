@@ -3,8 +3,10 @@ const { EmploiTemps, Classe, Etablissement, Utilisateur, CreneauCours, Cours, En
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { StatutEmploiTemps, ModeGeneration, RoleUtilisateur, StatutCreneau } = require('../utils/enums');
+const NotificationService = require('../services/notificationService');
 const PDFDocument = require('pdfkit');
-const { resolveScopedEtablissementId, applyEtablissementScope } = require('../utils/scope');
+const { resolveScopedEtablissementId, applyEtablissementScope, isAdminSystem } = require('../utils/scope');
+const GenerationService = require('../services/generationService');
 
 const emploiTempsController = {
   /**
@@ -18,7 +20,7 @@ const emploiTempsController = {
       let emploiTemps = null;
 
       // Selon le rôle, récupérer l'emploi du temps approprié
-      if (utilisateur.role === RoleUtilisateur.ELEVE) {
+      if (utilisateur.role === RoleUtilisateur.ETUDIANT) {
         // Trouver l'élève et sa classe
         const eleve = await Eleve.findOne({
           where: { utilisateur_id: utilisateur.id },
@@ -32,8 +34,8 @@ const emploiTempsController = {
           });
         }
 
-        emploiTemps = await getEmploiTempsActif(eleve.classe.id, semaine, resolveScopedEtablissementId(req));
-      } 
+        emploiTemps = await getEmploiTempsActif(eleve.classe.id, semaine, resolveScopedEtablissementId(req), true);
+      }
       else if (utilisateur.role === RoleUtilisateur.ENSEIGNANT) {
         const enseignant = await Enseignant.findOne({
           where: { utilisateur_id: utilisateur.id }
@@ -56,11 +58,41 @@ const emploiTempsController = {
       }
 
       if (!emploiTemps) {
-        return res.status(404).json({
-          error: 'Aucun emploi du temps trouvé',
-          code: 'SCHEDULE_NOT_FOUND'
+        // Construction d'une réponse vide mais structurellement valide
+        let emptyResponse = {
+          seances: [],
+          statistiques: {
+            heures_total: 0,
+            nombre_seances: 0,
+            matieres_count: 0
+          }
+        };
+
+        // Si c'est un étudiant, on ajoute les infos de sa classe
+        if (utilisateur.role === RoleUtilisateur.ETUDIANT) {
+          const eleve = await Eleve.findOne({
+            where: { utilisateur_id: utilisateur.id },
+            include: [{ association: 'classe', attributes: ['id', 'nom_classe', 'niveau'] }]
+          });
+          if (eleve && eleve.classe) {
+            emptyResponse.classe = eleve.classe;
+          }
+        }
+        // Si c'est un enseignant, on pourrait aussi ajouter ses infos?
+        // Pour l'instant on se concentre sur l'élève comme demandé.
+
+        return res.json({
+          emploi_temps: emptyResponse,
+          code: 'NO_SCHEDULE'
         });
       }
+
+      // Debug: Log pour vérifier les données
+      console.log('EmploiTemps trouvé:', {
+        id: emploiTemps.id,
+        nombreCreneaux: emploiTemps.creneaux?.length || 0,
+        statut: emploiTemps.statut
+      });
 
       res.json({
         emploi_temps: emploiTemps,
@@ -127,12 +159,12 @@ const emploiTempsController = {
       const { enseignantId } = req.params;
       const { semaine } = req.query;
 
-      // Vérifier que l'enseignant existe
+      // Vérifier que l'enseignant existe avec le scope approprié
       const enseignant = await Enseignant.findOne({
-        where: { id: enseignantId },
+        where: applyEtablissementScope(req, { id: enseignantId }),
         include: [{
           association: 'utilisateur',
-          where: { etablissement_id: resolveScopedEtablissementId(req) }
+          attributes: ['id', 'nom', 'prenom', 'etablissement_id']
         }]
       });
 
@@ -143,7 +175,15 @@ const emploiTempsController = {
         });
       }
 
-      const emploiTemps = await getEmploiTempsEnseignant(enseignantId, semaine, resolveScopedEtablissementId(req));
+      // Utiliser l'id d'établissement de l'enseignant pour la recherche si on est admin non scopé
+      const targetEtabId = enseignant.etablissement_id;
+
+      const emploiTemps = await getEmploiTempsEnseignant(
+        enseignantId,
+        semaine,
+        targetEtabId,
+        isAdminSystem(req.utilisateur) || req.utilisateur.role === RoleUtilisateur.DIRECTEUR // includeDrafts
+      );
 
       if (!emploiTemps) {
         return res.status(404).json({
@@ -171,14 +211,14 @@ const emploiTempsController = {
    */
   getAllEmploisTemps: async (req, res) => {
     try {
-      const { page = 1, limit = 10, classe_id, statut, search } = req.query;
+      const { page = 1, limit = 100, classe_id, statut, search } = req.query;
       const offset = (page - 1) * limit;
 
       const whereClause = applyEtablissementScope(req, {});
-      
+
       if (classe_id) whereClause.classe_id = classe_id;
       if (statut) whereClause.statut = statut;
-      if (search) whereClause.nom_version = { [Op.iLike]: `%${search}%` };
+      if (search) whereClause.nom_version = { [Op.like]: `%${search}%` };
 
       const { count, rows: emploisTemps } = await EmploiTemps.findAndCountAll({
         where: whereClause,
@@ -229,10 +269,7 @@ const emploiTempsController = {
       const { id } = req.params;
 
       const emploiTemps = await EmploiTemps.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [
           {
             association: 'classe',
@@ -300,6 +337,58 @@ const emploiTempsController = {
   },
 
   /**
+   * Récupérer le statut de génération d'un emploi du temps
+   */
+  getEmploiTempsStatus: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const emploiTemps = await EmploiTemps.findOne({
+        where: applyEtablissementScope(req, { id }),
+        attributes: ['id', 'statut', 'score_qualite', 'duree_generation', 'commentaires', 'updated_at'],
+        include: [
+          {
+            association: 'creneaux',
+            attributes: ['id']
+          }
+        ]
+      });
+
+      if (!emploiTemps) {
+        return res.status(404).json({
+          error: 'Emploi du temps non trouvé',
+          code: 'SCHEDULE_NOT_FOUND'
+        });
+      }
+
+      const isGenerating = emploiTemps.statut === StatutEmploiTemps.EN_COURS;
+      const isComplete = emploiTemps.statut === StatutEmploiTemps.BROUILLON ||
+        emploiTemps.statut === StatutEmploiTemps.VALIDE ||
+        emploiTemps.statut === StatutEmploiTemps.PUBLIE;
+
+      res.json({
+        id: emploiTemps.id,
+        statut: emploiTemps.statut,
+        is_generating: isGenerating,
+        is_complete: isComplete,
+        score_qualite: emploiTemps.score_qualite,
+        duree_generation: emploiTemps.duree_generation,
+        nombre_creneaux: emploiTemps.creneaux?.length || 0,
+        commentaires: emploiTemps.commentaires,
+        updated_at: emploiTemps.updated_at,
+        code: 'SCHEDULE_STATUS_RETRIEVED'
+      });
+
+    } catch (error) {
+      console.error('Erreur récupération statut emploi du temps:', error);
+      res.status(500).json({
+        error: 'Erreur lors de la récupération du statut',
+        code: 'SCHEDULE_STATUS_ERROR'
+      });
+    }
+  },
+
+  /**
    * Générer un nouvel emploi du temps
    */
   genererEmploiTemps: async (req, res) => {
@@ -324,10 +413,7 @@ const emploiTempsController = {
       } = req.body;
 
       const classe = await Classe.findOne({
-        where: { 
-          id: classe_id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id: classe_id })
       });
 
       if (!classe) {
@@ -337,10 +423,13 @@ const emploiTempsController = {
         });
       }
 
+      // Use establishment from the found class, creating scoped context
+      const targetEtablissementId = classe.etablissement_id;
+
       const existingEmploiTemps = await EmploiTemps.findOne({
-        where: { 
+        where: {
           nom_version,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: targetEtablissementId
         }
       });
 
@@ -352,37 +441,95 @@ const emploiTempsController = {
       }
 
       const startTime = Date.now();
-      
+
       const emploiTemps = await EmploiTemps.create({
         classe_id,
         nom_version,
         periode_debut,
         periode_fin,
-        statut: StatutEmploiTemps.BROUILLON,
-        score_qualite: Math.random() * 100,
+        statut: StatutEmploiTemps.EN_COURS, // Changed to EN_COURS for async generation
+        score_qualite: 0,
         mode_generation: mode_generation || ModeGeneration.EQUILIBRE,
         parametres_generation: parametres_generation || {},
         commentaires,
         generateur_id: req.utilisateur.id,
-        etablissement_id: req.utilisateur.etablissement_id,
+        etablissement_id: targetEtablissementId,
         duree_generation: 0
       });
 
-      const dureeGeneration = Date.now() - startTime;
-      await emploiTemps.update({ 
-        duree_generation: Math.floor(dureeGeneration / 1000)
-      });
+      // Lancer la génération en arrière-plan (async, non-bloquant)
+      (async () => {
+        const startTime = Date.now();
+        try {
+          const resultatGeneration = await GenerationService.genererEmploiTemps(classe_id, parametres_generation || {});
 
+          // Sauvegarder les créneaux générés
+          if (resultatGeneration.creneaux && resultatGeneration.creneaux.length > 0) {
+            const creneauxADb = resultatGeneration.creneaux.map(creneau => ({
+              emploi_temps_id: emploiTemps.id,
+              cours_id: creneau.cours_id,
+              salle_id: creneau.salle_id,
+              jour_semaine: creneau.jour_semaine,
+              heure_debut: creneau.heure_debut,
+              heure_fin: creneau.heure_fin,
+              date_debut_validite: periode_debut,
+              date_fin_validite: periode_fin,
+              statut: StatutCreneau?.PLANIFIE || 'planifie',
+              est_rattrapage: false
+            }));
+
+            await CreneauCours.bulkCreate(creneauxADb);
+          }
+
+          const dureeGeneration = Date.now() - startTime;
+
+          // Mettre à jour le statut à BROUILLON une fois terminé
+          await emploiTemps.update({
+            statut: StatutEmploiTemps.BROUILLON,
+            duree_generation: Math.floor(dureeGeneration / 1000),
+            score_qualite: Math.min(100, Math.max(0, resultatGeneration.score_qualite || 0))
+          });
+
+          console.log(`Génération terminée pour l'emploi du temps ${emploiTemps.id}`);
+        } catch (error) {
+          console.error('Erreur lors de la génération asynchrone:', error);
+
+          // Marquer l'emploi du temps comme ayant échoué
+          await emploiTemps.update({
+            statut: StatutEmploiTemps.BROUILLON,
+            commentaires: `Erreur de génération: ${error.message}`
+          });
+        }
+      })();
+
+      // Retourner immédiatement avec le statut EN_COURS
       res.status(201).json({
-        message: 'Emploi du temps généré avec succès',
+        message: 'Génération de l\'emploi du temps démarrée',
         emploi_temps: emploiTemps,
-        code: 'SCHEDULE_GENERATED'
+        code: 'SCHEDULE_GENERATION_STARTED'
       });
 
     } catch (error) {
       console.error('Erreur génération emploi du temps:', error);
+
+      // Check if this is a validation/business logic error
+      const validationErrors = [
+        'Aucun cours à planifier pour cette classe',
+        'Aucune salle disponible pour la génération',
+        'Aucun enseignant disponible'
+      ];
+
+      if (validationErrors.some(msg => error.message?.includes(msg))) {
+        return res.status(400).json({
+          error: error.message,
+          code: 'GENERATION_PREREQUISITES_MISSING'
+        });
+      }
+
+      // For other errors, return 500
       res.status(500).json({
-        error: 'Erreur lors de la génération de l\'emploi du temps',
+        error: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
         code: 'SCHEDULE_GENERATION_ERROR'
       });
     }
@@ -396,10 +543,7 @@ const emploiTempsController = {
       const { id } = req.params;
 
       const emploiTemps = await EmploiTemps.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!emploiTemps) {
@@ -434,10 +578,7 @@ const emploiTempsController = {
       const { id } = req.params;
 
       const emploiTemps = await EmploiTemps.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!emploiTemps) {
@@ -455,6 +596,13 @@ const emploiTempsController = {
       }
 
       await emploiTemps.publier();
+
+      // Notifier les utilisateurs concernés
+      try {
+        await NotificationService.notifierGenerationEmploiTemps(emploiTemps);
+      } catch (notifyError) {
+        console.error('Erreur notification publication EDT:', notifyError);
+      }
 
       res.json({
         message: 'Emploi du temps publié avec succès',
@@ -479,10 +627,7 @@ const emploiTempsController = {
       const { id } = req.params;
 
       const emploiTemps = await EmploiTemps.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        }
+        where: applyEtablissementScope(req, { id })
       });
 
       if (!emploiTemps) {
@@ -518,10 +663,7 @@ const emploiTempsController = {
       const { nom_nouvelle_version } = req.body;
 
       const emploiTempsOriginal = await EmploiTemps.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [{ association: 'creneaux' }]
       });
 
@@ -533,9 +675,9 @@ const emploiTempsController = {
       }
 
       const existingEmploiTemps = await EmploiTemps.findOne({
-        where: { 
+        where: {
           nom_version: nom_nouvelle_version,
-          etablissement_id: req.utilisateur.etablissement_id 
+          etablissement_id: req.utilisateur.etablissement_id
         }
       });
 
@@ -601,10 +743,7 @@ const emploiTempsController = {
       const { id } = req.params;
 
       const emploiTemps = await EmploiTemps.findOne({
-        where: { 
-          id,
-          etablissement_id: req.utilisateur.etablissement_id 
-        },
+        where: applyEtablissementScope(req, { id }),
         include: [
           {
             association: 'classe',
@@ -631,7 +770,7 @@ const emploiTempsController = {
       emploiTemps.creneaux.forEach(creneau => {
         const jour = creneau.jour_semaine;
         creneauxParJour[jour] = (creneauxParJour[jour] || 0) + 1;
-        
+
         const [debutHeures, debutMinutes] = creneau.heure_debut.split(':').map(Number);
         const [finHeures, finMinutes] = creneau.heure_fin.split(':').map(Number);
         const duree = (finHeures * 60 + finMinutes) - (debutHeures * 60 + debutMinutes);
@@ -795,7 +934,7 @@ const emploiTempsController = {
     try {
       const { id } = req.params;
       const errors = validationResult(req);
-      
+
       if (!errors.isEmpty()) {
         return res.status(400).json({
           error: 'Données invalides',
@@ -839,19 +978,19 @@ const emploiTempsController = {
             jour_semaine: jour_semaine || seance.jour_semaine,
             [Op.or]: [
               {
-                heure_debut: { 
+                heure_debut: {
                   [Op.between]: [
-                    heure_debut || seance.heure_debut, 
+                    heure_debut || seance.heure_debut,
                     heure_fin || seance.heure_fin
-                  ] 
+                  ]
                 }
               },
               {
-                heure_fin: { 
+                heure_fin: {
                   [Op.between]: [
-                    heure_debut || seance.heure_debut, 
+                    heure_debut || seance.heure_debut,
                     heure_fin || seance.heure_fin
-                  ] 
+                  ]
                 }
               }
             ]
@@ -1011,14 +1150,56 @@ const emploiTempsController = {
    */
   exportPDF: async (req, res) => {
     try {
-      const { classe_id, enseignant_id, semaine } = req.query;
+      const { id, classe_id, enseignant_id, semaine } = req.query;
+      const etablissement_id = resolveScopedEtablissementId(req);
+      const includeDrafts = isAdminSystem(req.utilisateur) ||
+        [RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE].includes(req.utilisateur.role);
 
       let emploiTemps;
 
-      if (classe_id) {
-        emploiTemps = await getEmploiTempsActif(classe_id, semaine, req.utilisateur.etablissement_id);
+      if (id) {
+        emploiTemps = await EmploiTemps.findOne({
+          where: applyEtablissementScope(req, { id }),
+          include: [
+            {
+              association: 'classe',
+              attributes: ['id', 'nom_classe', 'niveau', 'effectif']
+            },
+            {
+              association: 'creneaux',
+              include: [
+                {
+                  association: 'cours',
+                  include: [
+                    {
+                      association: 'matiere',
+                      attributes: ['id', 'nom_matiere', 'code_matiere', 'couleur_affichage']
+                    },
+                    {
+                      association: 'enseignant',
+                      include: [{
+                        association: 'utilisateur',
+                        attributes: ['id', 'nom', 'prenom']
+                      }]
+                    }
+                  ]
+                },
+                {
+                  association: 'salle',
+                  attributes: ['id', 'nom_salle', 'batiment', 'capacite']
+                }
+              ],
+              order: [
+                ['jour_semaine', 'ASC'],
+                ['heure_debut', 'ASC']
+              ]
+            }
+          ]
+        });
+      } else if (classe_id) {
+        emploiTemps = await getEmploiTempsActif(classe_id, semaine, etablissement_id, includeDrafts);
       } else if (enseignant_id) {
-        emploiTemps = await getEmploiTempsEnseignant(enseignant_id, semaine, req.utilisateur.etablissement_id);
+        emploiTemps = await getEmploiTempsEnseignant(enseignant_id, semaine, etablissement_id, includeDrafts);
       } else {
         return res.status(400).json({
           error: 'Veuillez spécifier une classe ou un enseignant',
@@ -1034,56 +1215,123 @@ const emploiTempsController = {
       }
 
       // Créer le PDF
-      const doc = new PDFDocument({ size: 'A4', layout: 'landscape' });
-      
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=emploi-temps-${Date.now()}.pdf`);
-      
-      doc.pipe(res);
-
-      // Titre
-      doc.fontSize(18).text('Emploi du Temps', { align: 'center' });
-      doc.moveDown();
-      
-      if (classe_id) {
-        doc.fontSize(12).text(`Classe: ${emploiTemps.classe?.nom_classe || 'N/A'}`, { align: 'center' });
-      }
-      
-      doc.fontSize(10).text(`Période: ${emploiTemps.periode_debut} - ${emploiTemps.periode_fin}`, { align: 'center' });
-      doc.moveDown(2);
-
-      // Créer un tableau des créneaux
-      const jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
-      const creneauxParJour = {};
-
-      emploiTemps.creneaux?.forEach(creneau => {
-        if (!creneauxParJour[creneau.jour_semaine]) {
-          creneauxParJour[creneau.jour_semaine] = [];
-        }
-        creneauxParJour[creneau.jour_semaine].push(creneau);
+      const doc = new PDFDocument({
+        size: 'A4',
+        layout: 'landscape',
+        margin: 30
       });
 
-      jours.forEach(jour => {
-        doc.fontSize(14).text(jour, { underline: true });
-        doc.moveDown(0.5);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=emploi-temps-${Date.now()}.pdf`);
 
-        const creneaux = creneauxParJour[jour] || [];
-        if (creneaux.length === 0) {
-          doc.fontSize(10).text('  Aucun cours', { italic: true });
-        } else {
-          creneaux.forEach(creneau => {
-            const matiere = creneau.cours?.matiere?.nom_matiere || 'N/A';
-            const enseignant = creneau.cours?.enseignant?.utilisateur ? 
-              `${creneau.cours.enseignant.utilisateur.nom} ${creneau.cours.enseignant.utilisateur.prenom}` : 
-              'N/A';
-            const salle = creneau.salle?.nom_salle || 'N/A';
-            
-            doc.fontSize(10).text(
-              `  ${creneau.heure_debut} - ${creneau.heure_fin} | ${matiere} | ${enseignant} | Salle: ${salle}`
-            );
-          });
+      doc.pipe(res);
+
+      // --- CONFIGURATION DU GRID ---
+      const MARGIN_LEFT = 60;
+      const MARGIN_TOP = 80;
+      const GRID_WIDTH = doc.page.width - MARGIN_LEFT - 40;
+      const GRID_HEIGHT = doc.page.height - MARGIN_TOP - 40;
+      const COL_WIDTH = GRID_WIDTH / 5;
+      const START_HOUR = 8;
+      const END_HOUR = 19;
+      const TOTAL_HOURS = END_HOUR - START_HOUR;
+      const PIXELS_PER_HOUR = GRID_HEIGHT / TOTAL_HOURS;
+
+      const joursArr = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+      const joursMap = { 'Lundi': 0, 'Mardi': 1, 'Mercredi': 2, 'Jeudi': 3, 'Vendredi': 4 };
+
+      // Helpers
+      const timeToY = (timeStr) => {
+        const [h, m] = timeStr.split(':').map(Number);
+        return MARGIN_TOP + (h - START_HOUR + m / 60) * PIXELS_PER_HOUR;
+      };
+
+      const getHexColor = (color) => {
+        if (!color) return '#e2e8f0'; // Default gray-200
+        if (color.startsWith('#')) return color;
+        // Basic mapping for named colors if any
+        const colors = {
+          'blue': '#3b82f6', 'red': '#ef4444', 'green': '#22c55e',
+          'yellow': '#eab308', 'purple': '#a855f7', 'pink': '#ec4899'
+        };
+        return colors[color] || '#e2e8f0';
+      };
+
+      // --- EN-TÊTE ---
+      doc.font('Helvetica-Bold').fontSize(20).text(emploiTemps.nom_version || 'Emploi du Temps', MARGIN_LEFT, 30);
+
+      let subTitle = '';
+      if (emploiTemps.classe) subTitle += `Classe: ${emploiTemps.classe.nom_classe} | `;
+
+      // Gérer la période pour les emplois du temps virtuels (enseignants)
+      if (emploiTemps.periode_debut && emploiTemps.periode_fin) {
+        subTitle += `Période: ${emploiTemps.periode_debut} au ${emploiTemps.periode_fin}`;
+      } else if (semaine) {
+        subTitle += `Semaine: ${semaine}`;
+      } else {
+        subTitle += `Année scolaire en cours`;
+      }
+
+      doc.font('Helvetica').fontSize(10).fillColor('#64748b').text(subTitle, MARGIN_LEFT, 55);
+
+      // --- DESSIN DU GRID (LIGNES ET JOURS) ---
+      // Lignes horizontales (Heures)
+      for (let i = 0; i <= TOTAL_HOURS; i++) {
+        const y = MARGIN_TOP + i * PIXELS_PER_HOUR;
+        doc.moveTo(MARGIN_LEFT, y).lineTo(MARGIN_LEFT + GRID_WIDTH, y).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+        doc.fillColor('#94a3b8').fontSize(8).text(`${START_HOUR + i}:00`, MARGIN_LEFT - 35, y - 4);
+      }
+
+      // Colonnes verticales (Jours)
+      joursArr.forEach((jour, i) => {
+        const x = MARGIN_LEFT + i * COL_WIDTH;
+        doc.moveTo(x, MARGIN_TOP).lineTo(x, MARGIN_TOP + GRID_HEIGHT).strokeColor('#e2e8f0').stroke();
+
+        doc.fillColor('#1e293b').font('Helvetica-Bold').fontSize(10)
+          .text(jour.toUpperCase(), x, MARGIN_TOP - 20, { width: COL_WIDTH, align: 'center' });
+      });
+      // Dernière ligne verticale
+      doc.moveTo(MARGIN_LEFT + GRID_WIDTH, MARGIN_TOP).lineTo(MARGIN_LEFT + GRID_WIDTH, MARGIN_TOP + GRID_HEIGHT).stroke();
+
+      // --- DESSIN DES CRÉNEAUX ---
+      const creneaux = emploiTemps.creneaux || [];
+      creneaux.forEach(creneau => {
+        // Mapping case-insensitive pour les jours
+        const jourNormalized = creneau.jour_semaine.charAt(0).toUpperCase() + creneau.jour_semaine.slice(1).toLowerCase();
+        const dayIdx = joursMap[jourNormalized];
+        if (dayIdx === undefined) return;
+
+        const x = MARGIN_LEFT + dayIdx * COL_WIDTH + 2;
+        const yStart = timeToY(creneau.heure_debut);
+        const yEnd = timeToY(creneau.heure_fin);
+        const height = yEnd - yStart;
+        const width = COL_WIDTH - 4;
+
+        const color = getHexColor(creneau.cours?.matiere?.couleur_affichage);
+
+        // Dessiner le bloc
+        doc.rect(x, yStart, width, height)
+          .fillAndStroke(color, '#cbd5e1');
+
+        // Texte inside
+        const padding = 5;
+        const innerWidth = width - padding * 2;
+
+        doc.fillColor('#000000').font('Helvetica-Bold').fontSize(8)
+          .text(creneau.cours?.matiere?.nom_matiere || 'N/A', x + padding, yStart + padding, { width: innerWidth, height: 10, ellipsis: true });
+
+        doc.font('Helvetica').fontSize(7).fillColor('#334155');
+
+        let infoLine = "";
+        if (creneau.cours?.enseignant?.utilisateur) {
+          infoLine += `${creneau.cours.enseignant.utilisateur.prenom[0]}. ${creneau.cours.enseignant.utilisateur.nom}`;
         }
-        doc.moveDown();
+        if (creneau.salle) {
+          infoLine += ` • ${creneau.salle.nom_salle}`;
+        }
+
+        doc.text(infoLine, x + padding, yStart + 18, { width: innerWidth, height: 20 });
+        doc.text(`${creneau.heure_debut} - ${creneau.heure_fin}`, x + padding, yStart + height - 12, { width: innerWidth, align: 'right' });
       });
 
       doc.end();
@@ -1105,11 +1353,18 @@ const emploiTempsController = {
 /**
  * Récupère l'emploi du temps actif publié pour une classe
  */
-async function getEmploiTempsActif(classeId, semaine, etablissementId) {
+async function getEmploiTempsActif(classeId, semaine, etablissementId, includeDrafts = false) {
+  console.log('🔍 getEmploiTempsActif parameters:', { classeId, semaine, etablissementId, includeDrafts });
+
+  // Debug: verify inputs are valid
+  if (!classeId) console.warn('⚠️ classeId is missing!');
+
   const whereClause = {
     classe_id: classeId,
     etablissement_id: etablissementId,
-    statut: StatutEmploiTemps.PUBLIE
+    statut: includeDrafts
+      ? { [Op.not]: StatutEmploiTemps.ARCHIVE }
+      : { [Op.in]: [StatutEmploiTemps.PUBLIE, StatutEmploiTemps.VALIDE] }
   };
 
   if (semaine) {
@@ -1118,60 +1373,81 @@ async function getEmploiTempsActif(classeId, semaine, etablissementId) {
     const dateFin = new Date(dateDebut);
     dateFin.setDate(dateFin.getDate() + 6);
 
+    // Set hours to cover entire days
+    dateDebut.setHours(0, 0, 0, 0);
+    dateFin.setHours(23, 59, 59, 999);
+
+    console.log('📅 Date filtering:', { annee, semaineNum, dateDebut, dateFin });
+
+    // Important: we want to find a timetable that overlaps with this week
+    // Logic: timetable_start <= week_end AND timetable_end >= week_start
     whereClause.periode_debut = { [Op.lte]: dateFin };
     whereClause.periode_fin = { [Op.gte]: dateDebut };
   }
 
-  return await EmploiTemps.findOne({
-    where: whereClause,
-    include: [
-      {
-        association: 'classe',
-        attributes: ['id', 'nom_classe', 'niveau', 'effectif']
-      },
-      {
-        association: 'creneaux',
-        where: semaine ? getCreneauWhereClause(semaine) : {},
-        required: false,
-        include: [
-          {
-            association: 'cours',
-            include: [
-              {
-                association: 'matiere',
-                attributes: ['id', 'nom_matiere', 'code_matiere', 'couleur_affichage']
-              },
-              {
-                association: 'enseignant',
-                include: [{
-                  association: 'utilisateur',
-                  attributes: ['id', 'nom', 'prenom']
-                }]
-              }
-            ]
-          },
-          {
-            association: 'salle',
-            attributes: ['id', 'nom_salle', 'batiment', 'capacite']
-          }
-        ],
-        order: [
-          ['jour_semaine', 'ASC'],
-          ['heure_debut', 'ASC']
-        ]
-      }
-    ],
-    order: [['created_at', 'DESC']]
-  });
+  console.log('🛠️ Constructed WhereClause:', JSON.stringify(whereClause, null, 2));
+
+  try {
+    const emploiTemps = await EmploiTemps.findOne({
+      where: whereClause,
+      include: [
+        {
+          association: 'classe',
+          attributes: ['id', 'nom_classe', 'niveau', 'effectif']
+        },
+        {
+          association: 'creneaux',
+          // Pour l'instant, on désactive le filtrage par date des créneaux pour s'assurer qu'ils s'affichent
+          // where: semaine ? getCreneauWhereClause(semaine) : {},
+          required: false,
+          include: [
+            {
+              association: 'cours',
+              include: [
+                {
+                  association: 'matiere',
+                  attributes: ['id', 'nom_matiere', 'code_matiere', 'couleur_affichage']
+                },
+                {
+                  association: 'enseignant',
+                  include: [{
+                    association: 'utilisateur',
+                    attributes: ['id', 'nom', 'prenom']
+                  }]
+                }
+              ]
+            },
+            {
+              association: 'salle',
+              attributes: ['id', 'nom_salle', 'batiment', 'capacite']
+            }
+          ],
+          order: [
+            ['jour_semaine', 'ASC'],
+            ['heure_debut', 'ASC']
+          ]
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
+
+    return emploiTemps;
+
+  } catch (error) {
+    console.error('❌ Erreur getEmploiTempsActif:', error);
+    throw error;
+  }
 }
 
 /**
  * Récupère l'emploi du temps consolidé d'un enseignant
  */
-async function getEmploiTempsEnseignant(enseignantId, semaine, etablissementId) {
+async function getEmploiTempsEnseignant(enseignantId, semaine, etablissementId, includeDrafts = false) {
   const whereClause = {
     etablissement_id: etablissementId,
-    statut: StatutEmploiTemps.PUBLIE
+    statut: includeDrafts
+      ? { [Op.not]: StatutEmploiTemps.ARCHIVE }
+      : StatutEmploiTemps.PUBLIE
   };
 
   if (semaine) {
@@ -1220,14 +1496,17 @@ async function getEmploiTempsEnseignant(enseignantId, semaine, etablissementId) 
             association: 'salle',
             attributes: ['id', 'nom_salle', 'batiment', 'capacite']
           }
+        ],
+        order: [
+          ['jour_semaine', 'ASC'],
+          ['heure_debut', 'ASC']
         ]
       }
-    ]
+    ],
+    order: [['created_at', 'DESC']]
   });
 
-  if (emploisTemps.length === 0) {
-    return null;
-  }
+
 
   // Fusionner tous les créneaux de tous les emplois du temps
   const tousLesCreneaux = [];
@@ -1286,16 +1565,18 @@ function getDateFromWeek(year, week) {
   const firstDayOfYear = new Date(year, 0, 1);
   const daysOffset = (week - 1) * 7;
   const firstMonday = new Date(firstDayOfYear);
-  
+
   // Trouver le premier lundi de l'année
   const dayOfWeek = firstDayOfYear.getDay();
   const daysToMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) % 7;
   firstMonday.setDate(firstDayOfYear.getDate() + daysToMonday);
-  
+
   // Ajouter les semaines
   firstMonday.setDate(firstMonday.getDate() + daysOffset);
-  
+
   return firstMonday;
 }
+
+
 
 module.exports = emploiTempsController;

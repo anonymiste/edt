@@ -1,18 +1,20 @@
 // controllers/statistiqueController.js
-const { 
-  Etablissement, 
-  Classe, 
-  Enseignant, 
-  Cours, 
-  Salle, 
-  Matiere, 
+const {
+  Etablissement,
+  Classe,
+  Enseignant,
+  Cours,
+  Salle,
+  Matiere,
   EmploiTemps,
   Rattrapage,
   Absence,
-  Utilisateur 
+  Utilisateur,
+  CreneauCours
 } = require('../database/models');
 const { Op } = require('sequelize');
-const { StatutClasse, StatutEmploiTemps, StatutRattrapage, StatutAbsence } = require('../utils/enums');
+const { StatutClasse, StatutEmploiTemps, StatutRattrapage, StatutAbsence, RoleUtilisateur } = require('../utils/enums');
+const { sequelize } = require('../config/database');
 
 const statistiqueController = {
   /**
@@ -38,26 +40,26 @@ const statistiqueController = {
         Enseignant.count({ where: { etablissement_id: etablissementId } }),
         Salle.count({ where: { etablissement_id: etablissementId } }),
         Matiere.count({ where: { etablissement_id: etablissementId } }),
-        Cours.count({ 
+        Cours.count({
           include: [{
             association: 'classe',
             where: { etablissement_id: etablissementId }
           }]
         }),
         Utilisateur.count({ where: { etablissement_id: etablissementId } }),
-        Classe.count({ 
-          where: { 
+        Classe.count({
+          where: {
             etablissement_id: etablissementId,
             statut: StatutClasse.ACTIVE
-          } 
+          }
         }),
-        EmploiTemps.count({ 
-          where: { 
+        EmploiTemps.count({
+          where: {
             etablissement_id: etablissementId,
             statut: StatutEmploiTemps.PUBLIE
-          } 
+          }
         }),
-        Rattrapage.count({ 
+        Rattrapage.count({
           where: { statut: StatutRattrapage.DEMANDE },
           include: [{
             association: 'cours',
@@ -67,8 +69,8 @@ const statistiqueController = {
             }]
           }]
         }),
-        Absence.count({ 
-          where: { 
+        Absence.count({
+          where: {
             statut: StatutAbsence.VALIDEE,
             date_debut: { [Op.lte]: new Date() },
             date_fin: { [Op.gte]: new Date() }
@@ -335,7 +337,7 @@ const statistiqueController = {
         total_cours: enseignant['cours.total_cours'] || 0,
         total_heures_hebdo: (enseignant['cours.total_heures_hebdo'] || 0) / 60, // Conversion en heures
         absences_validees: enseignant['absences.absences_validees'] || 0,
-        taux_charge: enseignant.heures_contractuelles_hebdo > 0 ? 
+        taux_charge: enseignant.heures_contractuelles_hebdo > 0 ?
           ((enseignant['cours.total_heures_hebdo'] || 0) / enseignant.heures_contractuelles_hebdo * 100).toFixed(2) : 0
       }));
 
@@ -361,6 +363,116 @@ const statistiqueController = {
       const etablissementId = req.utilisateur.etablissement_id;
       const aujourdhui = new Date().toISOString().split('T')[0];
 
+      // --- LOGIQUE POUR LES ÉTUDIANTS ---
+      if (req.utilisateur.role === "etudiant") { // Using string "etudiant" matching enum
+        const eleve = await require('../database/models').Eleve.findOne({
+          where: { utilisateur_id: req.utilisateur.id },
+          include: [{ association: 'classe' }]
+        });
+
+        if (!eleve) {
+          return res.status(404).json({ error: 'Élève non trouvé' });
+        }
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Cours d'aujourd'hui (basé sur creneaux)
+        // Note: This is a simplified check. Ideally we check the EmploiTemps for the current week.
+        // For now, we can count CreneauCours matching today's day of week
+        // or just return 0 if too complex to calculate purely from here without duplication.
+        // Let's try to query CreneauCours via EmploiTemps of the class.
+
+        // Jours de la semaine: 0=Dimanche, 1=Lundi...
+        const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+        const todayDay = days[new Date().getDay()];
+
+        const coursAujourdhui = await require('../database/models').CreneauCours.count({
+          where: {
+            jour_semaine: todayDay
+          },
+          include: [{
+            association: 'emploi_temps',
+            where: {
+              classe_id: eleve.classe_id,
+              statut: 'publie',
+              // Add date range check if possible, or assume active
+            }
+          }]
+        });
+
+        const absences = await Absence.count({ where: { eleve_id: eleve.id } });
+        const absencesInjustifiees = await Absence.count({
+          where: { eleve_id: eleve.id, statut: 'injustifiee' }
+        });
+
+        return res.json({
+          tableau_de_bord: {
+            etudiant: {
+              cours_aujourdhui: coursAujourdhui,
+              absences_total: absences,
+              absences_injustifiees: absencesInjustifiees,
+              classe: eleve.classe ? eleve.classe.nom_classe : 'N/A'
+            },
+            date_actualisation: aujourdhui
+          },
+          code: 'DASHBOARD_RETRIEVED'
+        });
+      }
+
+      // --- LOGIQUE POUR LES ENSEIGNANTS ---
+      if (req.utilisateur.role === RoleUtilisateur.ENSEIGNANT) {
+        const enseignant = await Enseignant.findOne({
+          where: { utilisateur_id: req.utilisateur.id }
+        });
+
+        if (!enseignant) {
+          return res.status(404).json({ error: 'Enseignant non trouvé' });
+        }
+
+        const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+        const todayDay = days[new Date().getDay()];
+
+        const [coursAujourdhui, rattrapagesEnAttente, absencesDeclarees] = await Promise.all([
+          CreneauCours.count({
+            where: { jour_semaine: todayDay },
+            include: [{
+              association: 'cours',
+              where: { enseignant_id: enseignant.id }
+            }]
+          }),
+          Rattrapage.count({
+            where: { statut: StatutRattrapage.DEMANDE },
+            include: [{
+              association: 'cours',
+              where: { enseignant_id: enseignant.id }
+            }]
+          }),
+          Absence.count({
+            where: {
+              enseignant_id: enseignant.id,
+              statut: StatutAbsence.DECLAREE
+            }
+          })
+        ]);
+
+        return res.json({
+          tableau_de_bord: {
+            enseignant: {
+              cours_aujourdhui: coursAujourdhui,
+              rattrapages_en_attente: rattrapagesEnAttente,
+              absences_declarees: absencesDeclarees
+            },
+            date_actualisation: aujourdhui
+          },
+          code: 'DASHBOARD_RETRIEVED'
+        });
+      }
+
+
+      // --- LOGIQUE ADMIN/DIRECTEUR (EXISTANTE) ---
       // Alertes et notifications
       const rattrapagesUrgents = await Rattrapage.count({
         where: {

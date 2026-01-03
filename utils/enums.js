@@ -25,9 +25,41 @@ module.exports = {
     INSTITUT: "institut"
   },
   StatutEtablissement: {
-    ACTIVE: "active",
+    ACTIF: "actif",
+    INACTIF: "inactif",
     SUSPENDU: "suspendu",
     ARCHIVE: "archive",
+  },
+
+  // Billing & Subscriptions
+  PlanType: {
+    TRIAL: "trial",
+    BASIC: "basic",
+    PREMIUM: "premium",
+    ENTERPRISE: "enterprise"
+  },
+
+  StatutSubscription: {
+    ACTIVE: "active",
+    SUSPENDED: "suspended",
+    CANCELLED: "cancelled",
+    EXPIRED: "expired"
+  },
+
+  StatutInvoice: {
+    DRAFT: "draft",
+    PENDING: "pending",
+    PAID: "paid",
+    OVERDUE: "overdue",
+    CANCELLED: "cancelled"
+  },
+
+  TypeMetrique: {
+    USER: "user",
+    CLASS: "class",
+    COURSE: "course",
+    STORAGE: "storage",
+    TIMETABLE: "timetable"
   },
   CategorieMatiere: {
     FONDAMENTALE: "fondamentale",
@@ -62,6 +94,12 @@ module.exports = {
     VALIDE: "valide",
     PUBLIE: "publie",
     ARCHIVE: "archive"
+  },
+
+  StatutCreneau: {
+    PLANIFIE: "planifie",
+    CONFIRME: "confirme",
+    ANNULE: "annule"
   },
 
   StatutRattrapage: {
@@ -117,7 +155,8 @@ module.exports = {
     COURS_ANNULE: "cours_annule",
     SOUTIEN: "soutien",
     PREPARATION_EXAMEN: "preparation_examen",
-    TUTORAT: "tutorat"
+    TUTORAT: "tutorat",
+    EXAMEN: "examen"
   },
   TypeContrainte: {
     DURE: "cours_annule",

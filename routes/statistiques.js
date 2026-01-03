@@ -12,35 +12,34 @@ router.use(logAccess('statistiques'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [
-  RoleUtilisateur.ADMIN, 
-  RoleUtilisateur.DIRECTEUR, 
+  RoleUtilisateur.ADMIN,
+  RoleUtilisateur.DIRECTEUR,
   RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE
 ];
 
-router.get('/general', 
-  requireRole(rolesAutorises), 
+router.get('/general',
+  requireRole(rolesAutorises),
   statistiqueController.getStatistiquesGenerales
 );
 
-router.get('/periodic', 
-  requireRole(rolesAutorises), 
+router.get('/periodic',
+  requireRole(rolesAutorises),
   queryValidation.dateRange,
   handleValidationErrors,
   statistiqueController.getStatistiquesPeriodiques
 );
 
-router.get('/classes', 
-  requireRole(rolesAutorises), 
+router.get('/classes',
+  requireRole(rolesAutorises),
   statistiqueController.getStatistiquesParClasse
 );
 
-router.get('/enseignants', 
-  requireRole(rolesAutorises), 
+router.get('/enseignants',
+  requireRole(rolesAutorises),
   statistiqueController.getStatistiquesEnseignants
 );
 
-router.get('/dashboard', 
-  requireRole(rolesAutorises), 
+router.get('/dashboard',
   statistiqueController.getTableauDeBord
 );
 

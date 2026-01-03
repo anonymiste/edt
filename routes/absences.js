@@ -12,52 +12,62 @@ router.use(logAccess('absences'));
 
 // Routes accessibles aux administrateurs, directeurs, responsables pédagogiques et enseignants
 const rolesAutorises = [
-  RoleUtilisateur.ADMIN, 
-  RoleUtilisateur.DIRECTEUR, 
+  RoleUtilisateur.ADMIN,
+  RoleUtilisateur.DIRECTEUR,
   RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE,
   RoleUtilisateur.ENSEIGNANT
 ];
 
-router.get('/', 
-  requireRole(rolesAutorises), 
+router.get('/',
+  requireRole(rolesAutorises),
   queryValidation.pagination,
   handleValidationErrors,
   absenceController.getAllAbsences
 );
 
-router.post('/', 
+router.get('/me',
+  requireRole([RoleUtilisateur.ETUDIANT]),
+  absenceController.getMesAbsencesEtudiant
+);
+
+router.post('/',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   absenceController.declarerAbsence
 );
 
+router.post('/bulk',
+  requireRole(rolesAutorises),
+  absenceController.declarerAbsencesEleves
+);
+
 // Routes accessibles à tous les utilisateurs authentifiés de l'établissement
-router.get('/:id', 
+router.get('/:id',
   requireRoleOrSelfEnseignant(rolesAutorises),
   absenceController.getAbsenceById
 );
 
 // Routes accessibles aux rôles autorisés seulement
-router.post('/:id/validate', 
+router.post('/:id/validate',
   requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]),
   requireEtablissementAccessCode,
   absenceController.validerAbsence
 );
 
-router.post('/:id/refuse', 
+router.post('/:id/refuse',
   requireRole([RoleUtilisateur.ADMIN, RoleUtilisateur.DIRECTEUR, RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE]),
   requireEtablissementAccessCode,
   absenceController.refuserAbsence
 );
 
 // Routes statistiques
-router.get('/stats/current', 
-  requireRole(rolesAutorises), 
+router.get('/stats/current',
+  requireRole(rolesAutorises),
   absenceController.getAbsencesEnCours
 );
 
-router.get('/stats/overview', 
-  requireRole(rolesAutorises), 
+router.get('/stats/overview',
+  requireRole(rolesAutorises),
   absenceController.getAbsenceStats
 );
 

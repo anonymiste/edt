@@ -540,6 +540,117 @@ const enseignantValidation = {
 };
 
 /**
+ * Validations pour les élèves
+ */
+const eleveValidation = {
+  create: [
+    body('utilisateur_id')
+      .isUUID()
+      .withMessage('ID utilisateur invalide'),
+
+    body('matricule')
+      .trim()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Le matricule doit contenir entre 1 et 50 caractères'),
+
+    body('classe_id')
+      .optional({ nullable: true })
+      .isUUID()
+      .withMessage('ID classe invalide'),
+
+    body('date_naissance')
+      .optional({ nullable: true })
+      .isDate()
+      .withMessage('Date de naissance invalide'),
+
+    body('adresse')
+      .optional({ nullable: true })
+      .trim()
+      .isLength({ max: 1000 })
+      .withMessage('L\'adresse est trop longue')
+  ],
+
+  update: [
+    body('matricule')
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Le matricule doit contenir entre 1 et 50 caractères'),
+
+    body('classe_id')
+      .optional({ nullable: true })
+      .isUUID()
+      .withMessage('ID classe invalide')
+  ]
+};
+
+/**
+ * Validations pour les directeurs
+ */
+const directeurValidation = {
+  create: [
+    body('utilisateur_id')
+      .isUUID()
+      .withMessage('ID utilisateur invalide'),
+
+    body('matricule')
+      .trim()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Le matricule doit contenir entre 1 et 50 caractères'),
+
+    body('date_nomination')
+      .isDate()
+      .withMessage('Date de nomination invalide')
+  ],
+
+  update: [
+    body('matricule')
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Le matricule doit contenir entre 1 et 50 caractères'),
+
+    body('date_nomination')
+      .optional()
+      .isDate()
+      .withMessage('Date de nomination invalide')
+  ]
+};
+
+/**
+ * Validations pour les responsables pédagogiques
+ */
+const rpValidation = {
+  create: [
+    body('utilisateur_id')
+      .isUUID()
+      .withMessage('ID utilisateur invalide'),
+
+    body('matricule')
+      .trim()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Le matricule doit contenir entre 1 et 50 caractères'),
+
+    body('date_prise_fonction')
+      .isDate()
+      .withMessage('Date de prise de fonction invalide')
+  ],
+
+  update: [
+    body('matricule')
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Le matricule doit contenir entre 1 et 50 caractères'),
+
+    body('date_prise_fonction')
+      .optional()
+      .isDate()
+      .withMessage('Date de prise de fonction invalide')
+  ]
+};
+
+/**
  * Validations pour les salles
  */
 const salleValidation = {
@@ -991,6 +1102,9 @@ module.exports = {
   classeValidation,
   matiereValidation,
   enseignantValidation,
+  eleveValidation,
+  directeurValidation,
+  rpValidation,
   salleValidation,
   emploiTempsValidation,
   rattrapageValidation,

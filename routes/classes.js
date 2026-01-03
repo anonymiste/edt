@@ -12,19 +12,19 @@ router.use(logAccess('classes'));
 
 // Routes accessibles aux administrateurs, directeurs et responsables pédagogiques
 const rolesAutorises = [
-  RoleUtilisateur.ADMIN, 
-  RoleUtilisateur.DIRECTEUR, 
+  RoleUtilisateur.ADMIN,
+  RoleUtilisateur.DIRECTEUR,
   RoleUtilisateur.RESPONSABLE_PEDAGOGIQUE
 ];
 
-router.get('/', 
-  requireRole(rolesAutorises), 
+router.get('/',
+  requireRole(rolesAutorises),
   queryValidation.pagination,
   handleValidationErrors,
   classeController.getAllClasses
 );
 
-router.post('/', 
+router.post('/',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   classeValidation.create,
@@ -33,16 +33,16 @@ router.post('/',
 );
 
 // Routes accessibles à tous les utilisateurs authentifiés de l'établissement
-router.get('/:id', 
+router.get('/:id',
   classeController.getClasseById
 );
 
-router.get('/:id/stats', 
+router.get('/:id/stats',
   classeController.getClasseStats
 );
 
 // Routes accessibles aux rôles autorisés seulement
-router.put('/:id', 
+router.put('/:id',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   classeValidation.update,
@@ -50,7 +50,7 @@ router.put('/:id',
   classeController.updateClasse
 );
 
-router.post('/:id/archive', 
+router.post('/:id/archive',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   classeValidation.idParam,
@@ -58,12 +58,22 @@ router.post('/:id/archive',
   classeController.archiveClasse
 );
 
-router.post('/:id/activate', 
+router.post('/:id/activate',
   requireRole(rolesAutorises),
   requireEtablissementAccessCode,
   classeValidation.idParam,
   handleValidationErrors,
   classeController.activateClasse
+);
+
+router.post('/:id/students',
+  requireRole(rolesAutorises),
+  classeController.assignStudent
+);
+
+router.delete('/:id/students/:studentId',
+  requireRole(rolesAutorises),
+  classeController.removeStudent
 );
 
 module.exports = router;

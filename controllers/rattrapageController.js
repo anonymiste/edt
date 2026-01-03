@@ -3,7 +3,25 @@ const { Rattrapage, Cours, CreneauCours, Enseignant } = require('../database/mod
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { TypeRattrapage, StatutRattrapage, TypeOperation } = require('../utils/enums');
+const NotificationService = require('../services/notificationService');
 const { resolveScopedEtablissementId } = require('../utils/scope');
+const { sequelize } = require('../config/database');
+
+const resolveEnseignantIdFromUser = async (utilisateur) => {
+  if (!utilisateur || utilisateur.role !== 'enseignant') return null;
+  if (utilisateur.enseignant_id) return utilisateur.enseignant_id;
+
+  const enseignant = await Enseignant.findOne({
+    where: { utilisateur_id: utilisateur.id },
+    attributes: ['id']
+  });
+
+  if (enseignant) {
+    utilisateur.enseignant_id = enseignant.id;
+    return enseignant.id;
+  }
+  return null;
+};
 
 const rattrapageController = {
   /**
@@ -11,24 +29,37 @@ const rattrapageController = {
    */
   getAllRattrapages: async (req, res) => {
     try {
-      const { page = 1, limit = 10, type_rattrapage, statut, search } = req.query;
+      const { page = 1, limit = 100, type_rattrapage, statut, search, enseignant_id } = req.query;
       const offset = (page - 1) * limit;
 
       const whereClause = {};
-      
+
       const scopedEtablissementId = resolveScopedEtablissementId(req);
+      const selfEnseignantId = await resolveEnseignantIdFromUser(req.utilisateur);
 
       // Filtrer par établissement via les relations
       const includeClause = [
         {
           association: 'cours',
+          where: {}, // Initialize empty where for cours
           include: [{
             association: 'classe',
             where: { etablissement_id: scopedEtablissementId },
             attributes: ['id', 'nom_classe']
+          },
+          {
+            association: 'matiere',
+            attributes: ['id', 'nom_matiere', 'code_matiere', 'couleur_affichage']
           }]
         }
       ];
+
+      // Filtrage par enseignant (soit soi-même, soit filtre admin)
+      if (selfEnseignantId) {
+        includeClause[0].where.enseignant_id = selfEnseignantId;
+      } else if (enseignant_id) {
+        includeClause[0].where.enseignant_id = enseignant_id;
+      }
 
       if (type_rattrapage) {
         whereClause.type_rattrapage = type_rattrapage;
@@ -41,7 +72,7 @@ const rattrapageController = {
       if (search) {
         includeClause[0].include[0].where = {
           ...includeClause[0].include[0].where,
-          nom_classe: { [Op.iLike]: `%${search}%` }
+          nom_classe: { [Op.like]: `%${search}%` }
         };
       }
 
@@ -196,6 +227,37 @@ const rattrapageController = {
         statut: StatutRattrapage.DEMANDE
       });
 
+      // Notifier les responsables pédagogiques
+      try {
+        const rattrapageFull = await Rattrapage.findByPk(rattrapage.id, {
+          include: [{
+            association: 'cours',
+            include: [
+              { association: 'matiere' },
+              {
+                association: 'enseignant',
+                include: [{ association: 'utilisateur' }]
+              }
+            ]
+          }]
+        });
+
+        // Notification générique pour les responsables
+        const responsables = await NotificationService.getResponsablesPedagogiques();
+        for (const resp of responsables) {
+          await NotificationService.creerNotification({
+            utilisateur_id: resp.id,
+            type: 'rattrapage',
+            titre: 'Nouvelle demande de rattrapage',
+            message: `L'enseignant ${rattrapageFull.cours.enseignant.utilisateur.prenom} ${rattrapageFull.cours.enseignant.utilisateur.nom} demande un rattrapage pour ${rattrapageFull.cours.matiere.nom_matiere}.`,
+            lien_action: `/gestion/rattrapages`,
+            canal: 'in_app'
+          });
+        }
+      } catch (notifyError) {
+        console.error('Erreur notification création rattrapage:', notifyError);
+      }
+
       res.status(201).json({
         message: 'Demande de rattrapage créée avec succès',
         rattrapage,
@@ -263,6 +325,49 @@ const rattrapageController = {
       }
 
       await rattrapage.planifier(creneau_id);
+
+      // Notifier l'enseignant et les élèves
+      try {
+        const rattrapageFull = await Rattrapage.findByPk(rattrapage.id, {
+          include: [
+            {
+              association: 'cours',
+              include: [
+                { association: 'matiere' },
+                { association: 'classe', include: [{ association: 'eleves', include: [{ association: 'utilisateur' }] }] },
+                { association: 'enseignant', include: [{ association: 'utilisateur' }] }
+              ]
+            },
+            { association: 'creneau_planifie' }
+          ]
+        });
+
+        // 1. Notification à l'enseignant
+        await NotificationService.creerNotification({
+          utilisateur_id: rattrapageFull.cours.enseignant.utilisateur.id,
+          type: 'rattrapage',
+          titre: 'Rattrapage planifié',
+          message: `Votre rattrapage pour ${rattrapageFull.cours.matiere.nom_matiere} a été planifié le ${rattrapageFull.creneau_planifie.jour_semaine} à ${rattrapageFull.creneau_planifie.heure_debut}.`,
+          lien_action: `/enseignant/rattrapages`,
+          canal: 'tous'
+        });
+
+        // 2. Notifications aux élèves de la classe
+        if (rattrapageFull.cours.classe.eleves) {
+          for (const eleve of rattrapageFull.cours.classe.eleves) {
+            await NotificationService.creerNotification({
+              utilisateur_id: eleve.utilisateur_id,
+              type: 'rattrapage',
+              titre: 'Nouveau cours de rattrapage',
+              message: `Un cours de rattrapage de ${rattrapageFull.cours.matiere.nom_matiere} est prévu le ${rattrapageFull.creneau_planifie.jour_semaine} à ${rattrapageFull.creneau_planifie.heure_debut}.`,
+              lien_action: `/etudiant/cours`,
+              canal: 'in_app'
+            });
+          }
+        }
+      } catch (notifyError) {
+        console.error('Erreur notification planification rattrapage:', notifyError);
+      }
 
       res.json({
         message: 'Rattrapage planifié avec succès',
@@ -422,9 +527,9 @@ const rattrapageController = {
   getRattrapageStats: async (req, res) => {
     try {
       const { periode_debut, periode_fin } = req.query;
-      
+
       const whereClause = {};
-      
+
       if (periode_debut && periode_fin) {
         whereClause.date_demande = {
           [Op.between]: [periode_debut, periode_fin]

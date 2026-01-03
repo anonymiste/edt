@@ -55,6 +55,7 @@ const LogConnexion = sequelize.define('LogConnexion', {
   }
 }, {
   tableName: 'logs_connexion',
+  updatedAt: false,
   indexes: [
     {
       fields: ['utilisateur_id']
@@ -129,6 +130,7 @@ const LogModification = sequelize.define('LogModification', {
   }
 }, {
   tableName: 'logs_modification',
+  updatedAt: false,
   indexes: [
     {
       fields: ['utilisateur_id']
@@ -146,15 +148,15 @@ const LogModification = sequelize.define('LogModification', {
 });
 
 // Méthodes pour LogConnexion
-LogConnexion.prototype.estConnexionReussie = function() {
+LogConnexion.prototype.estConnexionReussie = function () {
   return this.statut === StatutConnexion.SUCCES;
 };
 
-LogConnexion.prototype.estConnexionEchouee = function() {
+LogConnexion.prototype.estConnexionEchouee = function () {
   return this.statut === StatutConnexion.ECHEC;
 };
 
-LogConnexion.prototype.getInformations = function() {
+LogConnexion.prototype.getInformations = function () {
   return {
     id: this.id,
     date_heure: this.date_heure,
@@ -167,19 +169,19 @@ LogConnexion.prototype.getInformations = function() {
 };
 
 // Méthodes pour LogModification
-LogModification.prototype.estCreation = function() {
+LogModification.prototype.estCreation = function () {
   return this.type_operation === TypeOperation.CREATION;
 };
 
-LogModification.prototype.estModification = function() {
+LogModification.prototype.estModification = function () {
   return this.type_operation === TypeOperation.MODIFICATION;
 };
 
-LogModification.prototype.estSuppression = function() {
+LogModification.prototype.estSuppression = function () {
   return this.type_operation === TypeOperation.SUPPRESSION;
 };
 
-LogModification.prototype.getInformations = function() {
+LogModification.prototype.getInformations = function () {
   return {
     id: this.id,
     table_concernee: this.table_concernee,
