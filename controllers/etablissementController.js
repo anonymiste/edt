@@ -52,9 +52,12 @@ const etablissementController = {
       console.error('Erreur récupération établissements:', error);
       res.status(500).json({
         error: 'Erreur lors de la récupération des établissements',
+        message: error.message,
+        details: error.stack,
         code: 'RECUPERATION_ETABLISSEMENT_ERROR'
       });
     }
+
   },
 
   /**
@@ -90,9 +93,12 @@ const etablissementController = {
       console.error('Erreur récupération établissement:', error);
       res.status(500).json({
         error: 'Erreur lors de la récupération de l\'établissement',
+        message: error.message,
+        details: error.stack,
         code: 'RECUPERATION_ETABLISSEMENT_ERROR'
       });
     }
+
   },
 
   /**

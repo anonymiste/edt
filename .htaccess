@@ -12,10 +12,16 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
 
-    # 3. Rediriger tout le reste vers le point d'entrée Node.js
-    # On utilise ici l'IP locale et le port 5000 (configuré dans votre .env)
+    # 3. Support des WebSockets (Socket.io)
+    # Si la requête demande un Upgrade vers websocket, on redirige vers ws://
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteRule ^(.*)$ ws://127.0.0.1:5000/$1 [P,L]
+
+    # 4. Rediriger tout le reste vers le point d'entrée Node.js (HTTP standard)
     RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L]
 </IfModule>
+
 
 # 4. Paramètres de sécurité de base au niveau Apache
 <IfModule mod_headers.c>
