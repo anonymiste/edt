@@ -128,10 +128,12 @@ const authenticateToken = async (req, res, next) => {
 
     return res.status(500).json({
       error: 'Erreur d\'authentification',
+      message: error.message,
       code: 'AUTH_ERROR'
     });
   }
 };
+
 
 /**
  * Middleware de vérification des rôles
