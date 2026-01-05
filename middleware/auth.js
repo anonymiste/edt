@@ -9,7 +9,9 @@ const { RoleUtilisateur } = require('../utils/enums');
  * Middleware d'authentification JWT
  */
 const authenticateToken = async (req, res, next) => {
+  res.setHeader('X-Auth-Version', '2.0-Diagnostic');
   try {
+
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -32,25 +34,10 @@ const authenticateToken = async (req, res, next) => {
         {
           association: 'etablissement',
           attributes: ['id', 'nom', 'type', 'statut']
-        },
-        {
-          association: 'enseignant',
-          attributes: ['id', 'etablissement_id']
-        },
-        {
-          association: 'eleve',
-          attributes: ['id', 'classe_id', 'etablissement_id']
-        },
-        {
-          association: 'directeur',
-          attributes: ['id', 'etablissement_id']
-        },
-        {
-          association: 'responsablePedagogique',
-          attributes: ['id', 'etablissement_id']
         }
       ]
     });
+
 
     if (!utilisateur) {
       return res.status(401).json({
