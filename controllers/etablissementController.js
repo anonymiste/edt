@@ -156,10 +156,13 @@ const etablissementController = {
     } catch (error) {
       console.error('Erreur création établissement:', error);
       res.status(500).json({
-        error: `Erreur lors de la création de l\'établissement: ${error}`,
+        error: `Erreur lors de la création de l\'établissement`,
+        message: error.message,
+        details: error.stack,
         code: 'ETABLISSEMENT_CREATION_ERROR'
       });
     }
+
   },
 
   /**
@@ -205,9 +208,12 @@ const etablissementController = {
       console.error('Erreur mise à jour établissement:', error);
       res.status(500).json({
         error: 'Erreur lors de la mise à jour de l\'établissement',
+        message: error.message,
+        details: error.stack,
         code: 'ETABLISSEMENT_UPDATE_ERROR'
       });
     }
+
   },
 
   /**
@@ -239,9 +245,12 @@ const etablissementController = {
       console.error('Erreur génération code accès:', error);
       res.status(500).json({
         error: 'Erreur lors de la génération du code d\'accès',
+        message: error.message,
+        details: error.stack,
         code: 'ACCESS_CODE_GENERATION_ERROR'
       });
     }
+
   },
 
   /**

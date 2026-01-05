@@ -14,12 +14,25 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://fundacionesperanzatogo.tg',
+  'https://www.fundacionesperanzatogo.tg'
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:1102',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-etablissement-code', 'x-etablissement-access-code']
 }));
+
 
 // Limitation de requêtes
 const limiter = rateLimit({
