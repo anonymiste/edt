@@ -46,7 +46,7 @@ class NotificationService {
   static async envoyerNotificationEmail(notification) {
     try {
       const utilisateur = await Utilisateur.findByPk(notification.utilisateur_id);
-      
+
       if (!utilisateur || !utilisateur.email) {
         console.warn('Utilisateur ou email non trouvé pour notification:', notification.id);
         return;
@@ -91,43 +91,19 @@ class NotificationService {
    * Obtenir le contenu de l'email
    */
   static getEmailContent(notification) {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #3B82F6; color: white; padding: 20px; text-align: center; }
-          .content { background: #f9f9f9; padding: 20px; }
-          .footer { background: #f1f1f1; padding: 10px; text-align: center; font-size: 12px; }
-          .btn { display: inline-block; padding: 10px 20px; background: #3B82F6; color: white; text-decoration: none; border-radius: 5px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>EmploiDuTemps</h1>
-          </div>
-          <div class="content">
-            <h2>${notification.titre}</h2>
-            <p>${notification.message}</p>
-            ${notification.lien_action ? `
-              <p>
-                <a href="${notification.lien_action}" class="btn">
-                  Voir les détails
-                </a>
-              </p>
-            ` : ''}
-          </div>
-          <div class="footer">
-            <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
-          </div>
-        </div>
-      </body>
-      </html>
+    const content = `
+      <p>${notification.message}</p>
+      ${notification.priorite === 'critique' ? '<p style="color: #EF4444; font-weight: 700;">⚠️ Cette action nécessite votre attention immédiate.</p>' : ''}
     `;
+
+    return EmailService.getPremiumTemplate({
+      title: notification.titre,
+      content,
+      buttonText: notification.lien_action ? 'Voir les détails' : null,
+      buttonUrl: notification.lien_action ? `${config.app.url}${notification.lien_action}` : null
+    });
   }
+
 
   /**
    * Notifier la génération d'un emploi du temps

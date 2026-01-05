@@ -15,8 +15,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  // origin: process.env.FRONTEND_URL || 'http://localhost:5174',
-  origin: 'http://localhost:1102',
+  origin: process.env.FRONTEND_URL || 'http://localhost:1102',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-etablissement-code', 'x-etablissement-access-code']
@@ -237,9 +236,8 @@ const startServer = async () => {
     const server = http.createServer(app);
     const io = new Server(server, {
       cors: {
-        origin: 'http://localhost:1102',
+        origin: process.env.FRONTEND_URL || 'http://localhost:1102',
         methods: ["GET", "POST"],
-        allowedHeaders: ["my-custom-header"],
         credentials: true
       }
     });

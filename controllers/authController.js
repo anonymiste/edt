@@ -6,6 +6,7 @@ const config = require('../config/config');
 const { validationResult } = require('express-validator');
 const { RoleUtilisateur, StatutConnexion, StatutProfessionnel, StatutClasse, StatutEtablissement } = require('../utils/enums');
 const AuthService = require('../services/authService');
+const EmailService = require('../services/emailService');
 
 const authController = {
   /**
@@ -167,77 +168,84 @@ const authController = {
             });
           }
         } catch (profileError) {
-          console.error('Erreur creation profil spécifique:', profileError);
-          // On continue quand même, l'utilisateur est créé
-        }
+        console.error('Erreur creation profil spécifique:', profileError);
+        // On continue quand même, l'utilisateur est créé
       }
+    }
 
-      // Si le rôle nécessite la 2FA, générer un secret
-      if (rolesRequiring2FA.includes(role)) {
-        const twoFASecret = AuthService.generate2FASecret({ email });
-        await utilisateur.update({ deux_fa_secret: twoFASecret.secret });
-
-        // Générer le QR Code
-        const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
-
-        // Journaliser la création de compte
-        await LogConnexion.create({
-          utilisateur_id: utilisateur.id,
-          adresse_ip: req.ip,
-          user_agent: req.get('User-Agent'),
-          statut: StatutConnexion.SUCCES
-        });
-
-        // Générer le token JWT
-        const token = jwt.sign(
-          { id: utilisateur.id, email: utilisateur.email, role: utilisateur.role },
-          config.jwt.secret,
-          { expiresIn: config.jwt.expiresIn }
-        );
-
-        return res.status(201).json({
-          message: 'Utilisateur créé avec succès. La 2FA est requise.',
-          token,
-          utilisateur: {
-            ...utilisateur.toJSON(),
-            deux_fa_setup_required: true,
-            qr_code_url: qrCodeUrl,
-            secret: twoFASecret.secret
-          },
-          code: 'REGISTRATION_SUCCESS_2FA_REQUIRED'
-        });
-      } else {
-        // Pour les rôles ne nécessitant pas la 2FA
-        const token = jwt.sign(
-          { id: utilisateur.id, email: utilisateur.email, role: utilisateur.role },
-          config.jwt.secret,
-          { expiresIn: config.jwt.expiresIn }
-        );
-
-        await LogConnexion.create({
-          utilisateur_id: utilisateur.id,
-          adresse_ip: req.ip,
-          user_agent: req.get('User-Agent'),
-          statut: StatutConnexion.SUCCES
-        });
-
-        return res.status(201).json({
-          message: 'Utilisateur créé avec succès',
-          token,
-          utilisateur: utilisateur.toJSON(),
-          code: 'REGISTRATION_SUCCESS'
-        });
-      }
-
-    } catch (error) {
-      console.error('Erreur inscription:', error);
-      res.status(500).json({
-        error: 'Erreur lors de l\'inscription',
-        code: 'REGISTRATION_ERROR',
-        details: error?.message || String(error)
+      // Envoyer l'email de bienvenue (sans bloquer la réponse)
+      if (utilisateur.email) {
+      EmailService.envoyerEmailBienvenue(utilisateur).catch(err => {
+        console.error('Erreur envoi email bienvenue:', err);
       });
     }
-  },
+
+    // Si le rôle nécessite la 2FA, générer un secret
+    if (rolesRequiring2FA.includes(role)) {
+      const twoFASecret = AuthService.generate2FASecret({ email });
+      await utilisateur.update({ deux_fa_secret: twoFASecret.secret });
+
+      // Générer le QR Code
+      const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
+
+      // Journaliser la création de compte
+      await LogConnexion.create({
+        utilisateur_id: utilisateur.id,
+        adresse_ip: req.ip,
+        user_agent: req.get('User-Agent'),
+        statut: StatutConnexion.SUCCES
+      });
+
+      // Générer le token JWT
+      const token = jwt.sign(
+        { id: utilisateur.id, email: utilisateur.email, role: utilisateur.role },
+        config.jwt.secret,
+        { expiresIn: config.jwt.expiresIn }
+      );
+
+      return res.status(201).json({
+        message: 'Utilisateur créé avec succès. La 2FA est requise.',
+        token,
+        utilisateur: {
+          ...utilisateur.toJSON(),
+          deux_fa_setup_required: true,
+          qr_code_url: qrCodeUrl,
+          secret: twoFASecret.secret
+        },
+        code: 'REGISTRATION_SUCCESS_2FA_REQUIRED'
+      });
+    } else {
+      // Pour les rôles ne nécessitant pas la 2FA
+      const token = jwt.sign(
+        { id: utilisateur.id, email: utilisateur.email, role: utilisateur.role },
+        config.jwt.secret,
+        { expiresIn: config.jwt.expiresIn }
+      );
+
+      await LogConnexion.create({
+        utilisateur_id: utilisateur.id,
+        adresse_ip: req.ip,
+        user_agent: req.get('User-Agent'),
+        statut: StatutConnexion.SUCCES
+      });
+
+      return res.status(201).json({
+        message: 'Utilisateur créé avec succès',
+        token,
+        utilisateur: utilisateur.toJSON(),
+        code: 'REGISTRATION_SUCCESS'
+      });
+    }
+
+  } catch(error) {
+    console.error('Erreur inscription:', error);
+    res.status(500).json({
+      error: 'Erreur lors de l\'inscription',
+      code: 'REGISTRATION_ERROR',
+      details: error?.message || String(error)
+    });
+  }
+},
 
   /**
    * Connexion utilisateur avec support 2FA
@@ -383,356 +391,356 @@ const authController = {
     }
   },
 
-  /**
-   * Route pour vérifier un code 2FA
-   */
-  verify2FA: async (req, res) => {
-    try {
-      const { email, twoFAToken } = req.body;
+    /**
+     * Route pour vérifier un code 2FA
+     */
+    verify2FA: async (req, res) => {
+      try {
+        const { email, twoFAToken } = req.body;
 
-      const utilisateur = await Utilisateur.findOne({ where: { email } });
+        const utilisateur = await Utilisateur.findOne({ where: { email } });
 
-      if (!utilisateur) {
-        return res.status(404).json({
-          error: 'Utilisateur non trouvé',
-          code: 'USER_NOT_FOUND'
+        if (!utilisateur) {
+          return res.status(404).json({
+            error: 'Utilisateur non trouvé',
+            code: 'USER_NOT_FOUND'
+          });
+        }
+
+        if (!utilisateur.deux_fa_secret) {
+          return res.status(400).json({
+            error: '2FA non configurée pour cet utilisateur',
+            code: '2FA_NOT_CONFIGURED'
+          });
+        }
+
+        const isTokenValid = AuthService.verify2FACode(utilisateur.deux_fa_secret, twoFAToken);
+
+        if (!isTokenValid) {
+          return res.status(401).json({
+            error: 'Code 2FA invalide',
+            code: 'INVALID_2FA_TOKEN'
+          });
+        }
+
+        // Générer le token JWT final
+        const token = jwt.sign(
+          {
+            id: utilisateur.id,
+            email: utilisateur.email,
+            role: utilisateur.role,
+            twoFAVerified: true
+          },
+          config.jwt.secret,
+          { expiresIn: config.jwt.expiresIn }
+        );
+
+        res.json({
+          message: 'Authentification 2FA réussie',
+          token,
+          code: '2FA_VERIFICATION_SUCCESS'
+        });
+
+      } catch (error) {
+        console.error('Erreur vérification 2FA:', error);
+        res.status(500).json({
+          error: 'Erreur lors de la vérification 2FA',
+          code: '2FA_VERIFICATION_ERROR'
         });
       }
+    },
 
-      if (!utilisateur.deux_fa_secret) {
-        return res.status(400).json({
-          error: '2FA non configurée pour cet utilisateur',
-          code: '2FA_NOT_CONFIGURED'
-        });
-      }
+      /**
+       * Route pour configurer la 2FA
+       */
+      setup2FA: async (req, res) => {
+        try {
+          const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
 
-      const isTokenValid = AuthService.verify2FACode(utilisateur.deux_fa_secret, twoFAToken);
+          if (utilisateur.deux_fa_active) {
+            return res.status(400).json({
+              error: '2FA déjà activée',
+              code: '2FA_ALREADY_ACTIVE'
+            });
+          }
 
-      if (!isTokenValid) {
-        return res.status(401).json({
-          error: 'Code 2FA invalide',
-          code: 'INVALID_2FA_TOKEN'
-        });
-      }
+          // Générer un nouveau secret 2FA
+          const twoFASecret = AuthService.generate2FASecret({ email: utilisateur.email });
 
-      // Générer le token JWT final
-      const token = jwt.sign(
-        {
-          id: utilisateur.id,
-          email: utilisateur.email,
-          role: utilisateur.role,
-          twoFAVerified: true
+          // Générer le QR Code
+          const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
+
+          // Mettre à jour l'utilisateur avec le secret
+          await utilisateur.update({
+            deux_fa_secret: twoFASecret.secret
+          });
+
+          res.json({
+            message: 'Configuration 2FA initialisée',
+            qr_code_url: qrCodeUrl,
+            secret: twoFASecret.secret, // Pour développement/test seulement
+            code: '2FA_SETUP_INITIATED'
+          });
+
+        } catch (error) {
+          console.error('Erreur configuration 2FA:', error);
+          res.status(500).json({
+            error: 'Erreur lors de la configuration de la 2FA',
+            code: '2FA_SETUP_ERROR'
+          });
+        }
+      },
+
+        /**
+         * Route pour activer la 2FA après vérification
+         */
+        // controllers/authController.js - CORRECTION de la fonction activate2FA
+        activate2FA: async (req, res) => {
+          try {
+            const { twoFAToken } = req.body;
+
+            // ✅ CORRECTION : Utiliser req.utilisateur.id au lieu de userData.id
+            // req.utilisateur est injecté par le middleware authenticateToken
+            const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
+
+            if (!utilisateur) {
+              return res.status(404).json({
+                error: 'Utilisateur non trouvé',
+                code: 'USER_NOT_FOUND'
+              });
+            }
+
+            if (!utilisateur.deux_fa_secret) {
+              return res.status(400).json({
+                error: 'Veuillez d\'abord configurer la 2FA',
+                code: '2FA_NOT_CONFIGURED'
+              });
+            }
+
+            if (utilisateur.deux_fa_active) {
+              return res.status(400).json({
+                error: '2FA déjà activée',
+                code: '2FA_ALREADY_ACTIVE'
+              });
+            }
+
+            // Vérifier le token 2FA
+            const isTokenValid = AuthService.verify2FACode(utilisateur.deux_fa_secret, twoFAToken);
+
+            if (!isTokenValid) {
+              return res.status(401).json({
+                error: 'Code 2FA invalide',
+                code: 'INVALID_2FA_TOKEN'
+              });
+            }
+
+            // Activer la 2FA
+            await utilisateur.update({
+              deux_fa_active: true
+            });
+
+            // Générer un nouveau token avec twoFAVerified: true pour éviter la déconnexion
+            const token = jwt.sign(
+              {
+                id: utilisateur.id,
+                email: utilisateur.email,
+                role: utilisateur.role,
+                twoFAVerified: true
+              },
+              config.jwt.secret,
+              { expiresIn: config.jwt.expiresIn }
+            );
+
+            res.json({
+              message: '2FA activée avec succès',
+              token,
+              code: '2FA_ACTIVATED'
+            });
+
+          } catch (error) {
+            console.error('Erreur activation 2FA:', error);
+            res.status(500).json({
+              error: 'Erreur lors de l\'activation de la 2FA',
+              code: '2FA_ACTIVATION_ERROR',
+              details: error.message
+            });
+          }
         },
-        config.jwt.secret,
-        { expiresIn: config.jwt.expiresIn }
-      );
-
-      res.json({
-        message: 'Authentification 2FA réussie',
-        token,
-        code: '2FA_VERIFICATION_SUCCESS'
-      });
-
-    } catch (error) {
-      console.error('Erreur vérification 2FA:', error);
-      res.status(500).json({
-        error: 'Erreur lors de la vérification 2FA',
-        code: '2FA_VERIFICATION_ERROR'
-      });
-    }
-  },
-
-  /**
-   * Route pour configurer la 2FA
-   */
-  setup2FA: async (req, res) => {
-    try {
-      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
-
-      if (utilisateur.deux_fa_active) {
-        return res.status(400).json({
-          error: '2FA déjà activée',
-          code: '2FA_ALREADY_ACTIVE'
-        });
-      }
-
-      // Générer un nouveau secret 2FA
-      const twoFASecret = AuthService.generate2FASecret({ email: utilisateur.email });
-
-      // Générer le QR Code
-      const qrCodeUrl = await AuthService.generate2FAQrCode(twoFASecret.url);
-
-      // Mettre à jour l'utilisateur avec le secret
-      await utilisateur.update({
-        deux_fa_secret: twoFASecret.secret
-      });
-
-      res.json({
-        message: 'Configuration 2FA initialisée',
-        qr_code_url: qrCodeUrl,
-        secret: twoFASecret.secret, // Pour développement/test seulement
-        code: '2FA_SETUP_INITIATED'
-      });
-
-    } catch (error) {
-      console.error('Erreur configuration 2FA:', error);
-      res.status(500).json({
-        error: 'Erreur lors de la configuration de la 2FA',
-        code: '2FA_SETUP_ERROR'
-      });
-    }
-  },
-
-  /**
-   * Route pour activer la 2FA après vérification
-   */
-  // controllers/authController.js - CORRECTION de la fonction activate2FA
-  activate2FA: async (req, res) => {
-    try {
-      const { twoFAToken } = req.body;
-
-      // ✅ CORRECTION : Utiliser req.utilisateur.id au lieu de userData.id
-      // req.utilisateur est injecté par le middleware authenticateToken
-      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
-
-      if (!utilisateur) {
-        return res.status(404).json({
-          error: 'Utilisateur non trouvé',
-          code: 'USER_NOT_FOUND'
-        });
-      }
-
-      if (!utilisateur.deux_fa_secret) {
-        return res.status(400).json({
-          error: 'Veuillez d\'abord configurer la 2FA',
-          code: '2FA_NOT_CONFIGURED'
-        });
-      }
-
-      if (utilisateur.deux_fa_active) {
-        return res.status(400).json({
-          error: '2FA déjà activée',
-          code: '2FA_ALREADY_ACTIVE'
-        });
-      }
-
-      // Vérifier le token 2FA
-      const isTokenValid = AuthService.verify2FACode(utilisateur.deux_fa_secret, twoFAToken);
-
-      if (!isTokenValid) {
-        return res.status(401).json({
-          error: 'Code 2FA invalide',
-          code: 'INVALID_2FA_TOKEN'
-        });
-      }
-
-      // Activer la 2FA
-      await utilisateur.update({
-        deux_fa_active: true
-      });
-
-      // Générer un nouveau token avec twoFAVerified: true pour éviter la déconnexion
-      const token = jwt.sign(
-        {
-          id: utilisateur.id,
-          email: utilisateur.email,
-          role: utilisateur.role,
-          twoFAVerified: true
-        },
-        config.jwt.secret,
-        { expiresIn: config.jwt.expiresIn }
-      );
-
-      res.json({
-        message: '2FA activée avec succès',
-        token,
-        code: '2FA_ACTIVATED'
-      });
-
-    } catch (error) {
-      console.error('Erreur activation 2FA:', error);
-      res.status(500).json({
-        error: 'Erreur lors de l\'activation de la 2FA',
-        code: '2FA_ACTIVATION_ERROR',
-        details: error.message
-      });
-    }
-  },
 
 
-  /**
-   * Récupération du profil utilisateur
-   */
-  getProfile: async (req, res) => {
-    try {
-      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id, {
-        attributes: { exclude: ['mot_de_passe_hash', 'deux_fa_secret'] },
-        include: [{
-          association: 'etablissement',
-          attributes: ['id', 'nom', 'type', 'ville', 'statut', 'code_acces']
-        }]
-      });
+          /**
+           * Récupération du profil utilisateur
+           */
+          getProfile: async (req, res) => {
+            try {
+              const utilisateur = await Utilisateur.findByPk(req.utilisateur.id, {
+                attributes: { exclude: ['mot_de_passe_hash', 'deux_fa_secret'] },
+                include: [{
+                  association: 'etablissement',
+                  attributes: ['id', 'nom', 'type', 'ville', 'statut', 'code_acces']
+                }]
+              });
 
-      res.json({
-        utilisateur,
-        code: 'RECUPERATION_PROFILE_SUCCESS'
-      });
+              res.json({
+                utilisateur,
+                code: 'RECUPERATION_PROFILE_SUCCESS'
+              });
 
-    } catch (error) {
-      console.error('Erreur récupération profil:', error);
-      res.status(500).json({
-        error: 'Erreur lors de la récupération du profil',
-        code: 'RECUPERATION_PROFILE_ERROR'
-      });
-    }
-  },
+            } catch (error) {
+              console.error('Erreur récupération profil:', error);
+              res.status(500).json({
+                error: 'Erreur lors de la récupération du profil',
+                code: 'RECUPERATION_PROFILE_ERROR'
+              });
+            }
+          },
 
-  /**
-   * Modification du profil utilisateur
-   */
-  updateProfile: async (req, res) => {
-    try {
-      const { nom, prenom, telephone } = req.body;
-      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
+            /**
+             * Modification du profil utilisateur
+             */
+            updateProfile: async (req, res) => {
+              try {
+                const { nom, prenom, telephone } = req.body;
+                const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
 
-      await utilisateur.update({
-        nom: nom || utilisateur.nom,
-        prenom: prenom || utilisateur.prenom,
-        telephone: telephone || utilisateur.telephone
-      });
+                await utilisateur.update({
+                  nom: nom || utilisateur.nom,
+                  prenom: prenom || utilisateur.prenom,
+                  telephone: telephone || utilisateur.telephone
+                });
 
-      res.json({
-        message: 'Profil mis à jour avec succès',
-        utilisateur: {
-          id: utilisateur.id,
-          email: utilisateur.email,
-          nom: utilisateur.nom,
-          prenom: utilisateur.prenom,
-          telephone: utilisateur.telephone
-        },
-        code: 'PROFILE_UPDATED'
-      });
+                res.json({
+                  message: 'Profil mis à jour avec succès',
+                  utilisateur: {
+                    id: utilisateur.id,
+                    email: utilisateur.email,
+                    nom: utilisateur.nom,
+                    prenom: utilisateur.prenom,
+                    telephone: utilisateur.telephone
+                  },
+                  code: 'PROFILE_UPDATED'
+                });
 
-    } catch (error) {
-      console.error('Erreur mise à jour profil:', error);
-      res.status(500).json({
-        error: 'Erreur lors de la mise à jour du profil',
-        code: 'PROFILE_UPDATE_ERROR'
-      });
-    }
-  },
+              } catch (error) {
+                console.error('Erreur mise à jour profil:', error);
+                res.status(500).json({
+                  error: 'Erreur lors de la mise à jour du profil',
+                  code: 'PROFILE_UPDATE_ERROR'
+                });
+              }
+            },
 
-  /**
-   * Changement de mot de passe
-   */
-  changePassword: async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          error: 'Données invalides',
-          details: errors.array(),
-          code: 'VALIDATION_ERROR'
-        });
-      }
+              /**
+               * Changement de mot de passe
+               */
+              changePassword: async (req, res) => {
+                try {
+                  const errors = validationResult(req);
+                  if (!errors.isEmpty()) {
+                    return res.status(400).json({
+                      error: 'Données invalides',
+                      details: errors.array(),
+                      code: 'VALIDATION_ERROR'
+                    });
+                  }
 
-      const { currentPassword, newPassword } = req.body;
-      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
+                  const { currentPassword, newPassword } = req.body;
+                  const utilisateur = await Utilisateur.findByPk(req.utilisateur.id);
 
-      // Vérifier l'ancien mot de passe
-      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, utilisateur.mot_de_passe_hash);
-      if (!isCurrentPasswordValid) {
-        return res.status(401).json({
-          error: 'Le mot de passe actuel est incorrect. Veuillez réessayer.'
-        });
-      }
+                  // Vérifier l'ancien mot de passe
+                  const isCurrentPasswordValid = await bcrypt.compare(currentPassword, utilisateur.mot_de_passe_hash);
+                  if (!isCurrentPasswordValid) {
+                    return res.status(401).json({
+                      error: 'Le mot de passe actuel est incorrect. Veuillez réessayer.'
+                    });
+                  }
 
-      // Hasher le nouveau mot de passe
-      const saltRounds = 12;
-      const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+                  // Hasher le nouveau mot de passe
+                  const saltRounds = 12;
+                  const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
 
-      // Mettre à jour le mot de passe
-      await utilisateur.update({ mot_de_passe_hash: newPasswordHash });
+                  // Mettre à jour le mot de passe
+                  await utilisateur.update({ mot_de_passe_hash: newPasswordHash });
 
-      res.json({
-        message: 'Mot de passe modifié avec succès'
-      });
+                  res.json({
+                    message: 'Mot de passe modifié avec succès'
+                  });
 
-    } catch (error) {
-      console.error('Erreur changement mot de passe:', error);
-      res.status(500).json({
-        error: 'Erreur lors du changement de mot de passe'
-      });
-    }
-  },
+                } catch (error) {
+                  console.error('Erreur changement mot de passe:', error);
+                  res.status(500).json({
+                    error: 'Erreur lors du changement de mot de passe'
+                  });
+                }
+              },
 
-  /**
-   * Rafraîchissement du token
-   */
-  refreshToken: async (req, res) => {
-    try {
-      const utilisateur = await Utilisateur.findByPk(req.utilisateur.id, {
-        attributes: ['id', 'email', 'role']
-      });
+                /**
+                 * Rafraîchissement du token
+                 */
+                refreshToken: async (req, res) => {
+                  try {
+                    const utilisateur = await Utilisateur.findByPk(req.utilisateur.id, {
+                      attributes: ['id', 'email', 'role']
+                    });
 
-      const newToken = jwt.sign(
-        {
-          id: utilisateur.id,
-          email: utilisateur.email,
-          role: utilisateur.role
-        },
-        config.jwt.secret,
-        { expiresIn: config.jwt.expiresIn }
-      );
+                    const newToken = jwt.sign(
+                      {
+                        id: utilisateur.id,
+                        email: utilisateur.email,
+                        role: utilisateur.role
+                      },
+                      config.jwt.secret,
+                      { expiresIn: config.jwt.expiresIn }
+                    );
 
-      res.json({
-        token: newToken,
-        code: 'TOKEN_REFRESHED'
-      });
+                    res.json({
+                      token: newToken,
+                      code: 'TOKEN_REFRESHED'
+                    });
 
-    } catch (error) {
-      console.error('Erreur rafraîchissement token:', error);
-      res.status(500).json({
-        error: 'Erreur lors du rafraîchissement du token',
-        code: 'TOKEN_REFRESH_ERROR'
-      });
-    }
-  },
+                  } catch (error) {
+                    console.error('Erreur rafraîchissement token:', error);
+                    res.status(500).json({
+                      error: 'Erreur lors du rafraîchissement du token',
+                      code: 'TOKEN_REFRESH_ERROR'
+                    });
+                  }
+                },
 
-  /**
-   * Upload de la photo de profil
-   */
-  uploadAvatar: async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          error: 'Veuillez sélectionner une image pour votre photo de profil.'
-        });
-      }
+                  /**
+                   * Upload de la photo de profil
+                   */
+                  uploadAvatar: async (req, res) => {
+                    try {
+                      if (!req.file) {
+                        return res.status(400).json({
+                          error: 'Veuillez sélectionner une image pour votre photo de profil.'
+                        });
+                      }
 
-      // Construction de l'URL relative
-      // Note: req.file.filename est généré par multer
-      const relativePath = `/uploads/avatars/${req.file.filename}`;
+                      // Construction de l'URL relative
+                      // Note: req.file.filename est généré par multer
+                      const relativePath = `/uploads/avatars/${req.file.filename}`;
 
-      // Mise à jour de l'utilisateur
-      await Utilisateur.update(
-        { photo_url: relativePath },
-        { where: { id: req.utilisateur.id } }
-      );
+                      // Mise à jour de l'utilisateur
+                      await Utilisateur.update(
+                        { photo_url: relativePath },
+                        { where: { id: req.utilisateur.id } }
+                      );
 
-      res.json({
-        message: 'Photo de profil mise à jour avec succès',
-        photo_url: relativePath
-      });
+                      res.json({
+                        message: 'Photo de profil mise à jour avec succès',
+                        photo_url: relativePath
+                      });
 
-    } catch (error) {
-      console.error('Erreur upload avatar:', error);
-      res.status(500).json({
-        error: 'Erreur lors du téléchargement de la photo',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
+                    } catch (error) {
+                      console.error('Erreur upload avatar:', error);
+                      res.status(500).json({
+                        error: 'Erreur lors du téléchargement de la photo',
+                        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+                      });
+                    }
+                  }
 };
 
 module.exports = authController;

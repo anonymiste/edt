@@ -60,64 +60,96 @@ class EmailService {
   }
 
   /**
-   * Envoyer un email de bienvenue
+   * Template d'email Premium
    */
-  static async envoyerEmailBienvenue(utilisateur, motDePasseTemporaire = null) {
-    const sujet = 'Bienvenue sur EmploiDuTemps';
-    const contenu = this.getEmailBienvenueContent(utilisateur, motDePasseTemporaire);
+  static getPremiumTemplate({ title, content, buttonText = null, buttonUrl = null, footer = null }) {
+    const primaryColor = '#3B82F6';
+    const secondaryColor = '#1E293B';
+    const backgroundColor = '#F8FAFC';
 
-    return await this.envoyerEmail({
-      to: utilisateur.email,
-      subject: sujet,
-      html: contenu
-    });
-  }
-
-  /**
-   * Contenu de l'email de bienvenue
-   */
-  static getEmailBienvenueContent(utilisateur, motDePasseTemporaire) {
-    const motDePasseSection = motDePasseTemporaire ? `
-      <p><strong>Mot de passe temporaire:</strong> ${motDePasseTemporaire}</p>
-      <p>Nous vous recommandons de changer votre mot de passe après votre première connexion.</p>
+    const actionButton = (buttonText && buttonUrl) ? `
+      <div style="margin: 30px 0; text-align: center;">
+        <a href="${buttonUrl}" style="background-color: ${primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);">
+          ${buttonText}
+        </a>
+      </div>
     ` : '';
 
     return `
       <!DOCTYPE html>
-      <html>
+      <html lang="fr">
       <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #3B82F6; color: white; padding: 20px; text-align: center; }
-          .content { background: #f9f9f9; padding: 20px; }
-          .footer { background: #f1f1f1; padding: 10px; text-align: center; font-size: 12px; }
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+          body { font-family: 'Inter', Arial, sans-serif; background-color: ${backgroundColor}; color: ${secondaryColor}; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+          .wrapper { width: 100%; table-layout: fixed; background-color: ${backgroundColor}; padding-bottom: 40px; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; margin-top: 40px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+          .header { background: linear-gradient(135deg, ${primaryColor} 0%, #2563EB 100%); padding: 40px 20px; text-align: center; color: white; }
+          .header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.025em; }
+          .content { padding: 40px 30px; line-height: 1.6; }
+          .content h2 { color: ${secondaryColor}; font-size: 20px; font-weight: 600; margin-top: 0; margin-bottom: 20px; }
+          .content p { margin-bottom: 16px; color: #475569; }
+          .footer { padding: 20px; text-align: center; font-size: 13px; color: #94A3B8; background-color: #F1F5F9; }
+          .footer p { margin: 5px 0; }
+          hr { border: 0; border-top: 1px solid #E2E8F0; margin: 30px 0; }
         </style>
       </head>
       <body>
-        <div class="container">
-          <div class="header">
-            <h1>Bienvenue sur EmploiDuTemps</h1>
-          </div>
-          <div class="content">
-            <h2>Bonjour ${utilisateur.prenom},</h2>
-            <p>Votre compte a été créé avec succès sur notre plateforme de gestion d'emploi du temps.</p>
-            ${motDePasseSection}
-            <p><strong>Rôle:</strong> ${utilisateur.role}</p>
-            <p>Vous pouvez dès maintenant vous connecter à votre compte.</p>
-            <p>
-              <a href="${config.app.url}/login" style="display: inline-block; padding: 10px 20px; background: #3B82F6; color: white; text-decoration: none; border-radius: 5px;">
-                Se connecter
-              </a>
-            </p>
-          </div>
-          <div class="footer">
-            <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+        <div class="wrapper">
+          <div class="container">
+            <div class="header">
+              <h1>${title}</h1>
+            </div>
+            <div class="content">
+              ${content}
+              ${actionButton}
+            </div>
+            <div class="footer">
+              <p>${footer || "L'équipe TimeTable Evolution"}</p>
+              <p>© ${new Date().getFullYear()} - Plateforme de Gestion Scolaire</p>
+              <p style="font-size: 11px;">Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+            </div>
           </div>
         </div>
       </body>
       </html>
     `;
+  }
+
+  /**
+   * Envoyer un email de bienvenue
+   */
+  static async envoyerEmailBienvenue(utilisateur, motDePasseTemporaire = null) {
+    const sujet = 'Bienvenue sur TimeTable Evolution';
+
+    const content = `
+      <h2>Bonjour ${utilisateur.prenom},</h2>
+      <p>Nous sommes ravis de vous accueillir sur <strong>TimeTable Evolution</strong>, votre nouvel outil de gestion d'emploi du temps.</p>
+      <p>Votre compte a été configuré avec le rôle : <strong>${utilisateur.role}</strong>.</p>
+      ${motDePasseTemporaire ? `
+        <div style="background-color: #F1F5F9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0; font-weight: 600;">Vos identifiants de connexion :</p>
+          <p style="margin: 5px 0 0 0;">Mot de passe temporaire : <code style="background: white; padding: 2px 6px; border-radius: 4px;">${motDePasseTemporaire}</code></p>
+        </div>
+        <p><em>Nous vous recommandons vivement de modifier ce mot de passe dès votre première connexion pour des raisons de sécurité.</em></p>
+      ` : ''}
+      <p>Vous pouvez dès maintenant accéder à votre espace personnel en cliquant sur le bouton ci-dessous.</p>
+    `;
+
+    const html = this.getPremiumTemplate({
+      title: 'Bienvenue au Bord !',
+      content,
+      buttonText: 'Accéder à mon Espace',
+      buttonUrl: `${config.app.url}/login`
+    });
+
+    return await this.envoyerEmail({
+      to: utilisateur.email,
+      subject: sujet,
+      html
+    });
   }
 
   /**
@@ -127,50 +159,29 @@ class EmailService {
     const sujet = 'Réinitialisation de votre mot de passe';
     const lien = `${config.app.url}/reset-password?token=${token}`;
 
-    const contenu = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #3B82F6; color: white; padding: 20px; text-align: center; }
-          .content { background: #f9f9f9; padding: 20px; }
-          .footer { background: #f1f1f1; padding: 10px; text-align: center; font-size: 12px; }
-          .btn { display: inline-block; padding: 10px 20px; background: #3B82F6; color: white; text-decoration: none; border-radius: 5px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Réinitialisation de mot de passe</h1>
-          </div>
-          <div class="content">
-            <h2>Bonjour ${utilisateur.prenom},</h2>
-            <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
-            <p>Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe :</p>
-            <p>
-              <a href="${lien}" class="btn">
-                Réinitialiser mon mot de passe
-              </a>
-            </p>
-            <p><em>Ce lien expirera dans 1 heure.</em></p>
-            <p>Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
-          </div>
-          <div class="footer">
-            <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
-          </div>
-        </div>
-      </body>
-      </html>
+    const content = `
+      <h2>Bonjour ${utilisateur.prenom},</h2>
+      <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
+      <p>Pas d'inquiétude, cela arrive même aux meilleurs ! Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe sécurisé.</p>
+      <p style="color: #64748B; font-size: 14px;"><em>Ce lien expirera dans une heure pour votre sécurité.</em></p>
+      <hr />
+      <p style="font-size: 13px; color: #94A3B8;">Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email en toute sécurité. Votre mot de passe restera inchangé.</p>
     `;
+
+    const html = this.getPremiumTemplate({
+      title: 'Réinitialisation de Mot de Passe',
+      content,
+      buttonText: 'Mettre à jour mon mot de passe',
+      buttonUrl: lien
+    });
 
     return await this.envoyerEmail({
       to: utilisateur.email,
       subject: sujet,
-      html: contenu
+      html
     });
   }
+
 
   /**
    * Vérifier la configuration email

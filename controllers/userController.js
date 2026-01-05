@@ -14,7 +14,8 @@ const { sequelize } = require('../config/database');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const { RoleUtilisateur, TypeOperation } = require('../utils/enums');
-const { applyEtablissementScope, resolveScopedEtablissementId, isAdminSystem } = require('../utils/scope');
+const { resolveEtablissementScope, applyEtablissementScope, resolveScopedEtablissementId, isAdminSystem } = require('../utils/scope');
+const EmailService = require('../services/emailService');
 
 const userController = {
   /**
@@ -204,6 +205,13 @@ const userController = {
         valeur_apres: { email, nom, prenom, role },
         adresse_ip: req.ip
       });
+
+      // Envoyer l'email de bienvenue
+      if (utilisateur.email) {
+        EmailService.envoyerEmailBienvenue(utilisateur, actualPassword).catch(err => {
+          console.error('Erreur envoi email bienvenue (admin create):', err);
+        });
+      }
 
       res.status(201).json({
         message: 'Utilisateur créé avec succès',
