@@ -120,10 +120,11 @@ const routesMapping = [
   { path: '/ressources', router: ressourceRoutes },
   { path: '/seances-virtuelles', router: seanceVirtuelleRoutes },
   { path: '/examens', router: examenRoutes },
-  { path: '/sessions-examen', sessionExamenRoutes },
-  { path: '/repartitions', repartitionRoutes },
-  { path: '/accreditations', accreditationRoutes },
-  { path: '/chat', chatRoutes }
+  { path: '/sessions-examen', router: sessionExamenRoutes },
+  { path: '/repartitions', router: repartitionRoutes },
+  { path: '/accreditations', router: accreditationRoutes },
+  { path: '/chat', router: chatRoutes }
+
 ];
 
 routesMapping.forEach(route => {
