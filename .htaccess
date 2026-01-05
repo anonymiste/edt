@@ -1,12 +1,32 @@
-RewriteEngine On
+# ==============================================================================
+# CONFIGURATION BACKEND - EDTS MANAGER
+# ==============================================================================
 
-# Ne pas toucher aux fichiers physiques existants (image, etc)
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
+<IfModule mod_rewrite.c>
+    RewriteEngine On
 
-# Rediriger toutes les autres requêtes vers l'application Node.js
-# Note : On utilise 127.0.0.1:5000 qui est le port par défaut configuré
-RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L]
+    # 1. Autoriser les en-têtes Authorization (JWT)
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# Optionnel : Si le module Proxy n'est pas disponible, Passenger s'en chargera via le panel cPanel
-# Mais ce fichier aide Apache à comprendre que les sous-chemins doivent être gérés par Node.
+    # 2. Ne pas rediriger si le fichier ou dossier existe physiquement (images, uploads)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # 3. Rediriger tout le reste vers le point d'entrée Node.js
+    # On utilise ici l'IP locale et le port 5000 (configuré dans votre .env)
+    RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L]
+</IfModule>
+
+# 4. Paramètres de sécurité de base au niveau Apache
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "https://fundacionesperanzatogo.tg"
+    Header set Access-Control-Allow-Credentials "true"
+    Header set Referrer-Policy "no-referrer-when-downgrade"
+</IfModule>
+
+# 5. Désactiver le listing des répertoires
+Options -Indexes
+
+# 6. Gestion des erreurs personnalisée vers l'API
+ErrorDocument 404 /index.php 
+# Note : Si vous utilisez Node.js Selector, les erreurs sont normalement gérées par Express

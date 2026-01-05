@@ -90,39 +90,46 @@ app.use((req, res, next) => {
 // Servir les fichiers statiques (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes API
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/etablissements', etablissementRoutes);
-app.use('/api/classes', classeRoutes);
-app.use('/api/matieres', matiereRoutes);
-app.use('/api/enseignants', enseignantRoutes);
-app.use('/api/salles', salleRoutes);
-app.use('/api/cours', coursRoutes);
-app.use('/api/emplois-temps', emploiTempsRoutes);
-app.use('/api/rattrapages', rattrapageRoutes);
-app.use('/api/absences', absenceRoutes);
-app.use('/api/teacher/absences', teacherAbsenceRoutes);
-app.use('/api/statistiques', statistiqueRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/eleves', eleveRoutes);
-app.use('/api/directeurs', directeurRoutes);
-app.use('/api/responsables-pedagogiques', rpRoutes);
-app.use('/api/periodes', periodeRoutes);
-app.use('/api/evaluations', evaluationRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/invoices', invoiceRoutes);
-app.use('/api/pricing', pricingRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/notes', noteRoutes);
-app.use('/api/bulletins', bulletinRoutes);
-app.use('/api/ressources', ressourceRoutes);
-app.use('/api/seances-virtuelles', seanceVirtuelleRoutes);
-app.use('/api/examens', examenRoutes);
-app.use('/api/sessions-examen', sessionExamenRoutes);
-app.use('/api/repartitions', repartitionRoutes);
-app.use('/api/accreditations', accreditationRoutes);
-app.use('/api/chat', chatRoutes);
+// Routes API - Supportent avec et sans le préfixe /api pour la flexibilité en production
+const routesMapping = [
+  { path: '/auth', router: authRoutes },
+  { path: '/users', router: userRoutes },
+  { path: '/etablissements', router: etablissementRoutes },
+  { path: '/classes', router: classeRoutes },
+  { path: '/matieres', router: matiereRoutes },
+  { path: '/enseignants', router: enseignantRoutes },
+  { path: '/salles', router: salleRoutes },
+  { path: '/cours', router: coursRoutes },
+  { path: '/emplois-temps', router: emploiTempsRoutes },
+  { path: '/rattrapages', router: rattrapageRoutes },
+  { path: '/absences', router: absenceRoutes },
+  { path: '/teacher/absences', router: teacherAbsenceRoutes },
+  { path: '/statistiques', router: statistiqueRoutes },
+  { path: '/notifications', router: notificationRoutes },
+  { path: '/eleves', router: eleveRoutes },
+  { path: '/directeurs', router: directeurRoutes },
+  { path: '/responsables-pedagogiques', router: rpRoutes },
+  { path: '/periodes', router: periodeRoutes },
+  { path: '/evaluations', router: evaluationRoutes },
+  { path: '/subscriptions', router: subscriptionRoutes },
+  { path: '/invoices', router: invoiceRoutes },
+  { path: '/pricing', router: pricingRoutes },
+  { path: '/payments', router: paymentRoutes },
+  { path: '/notes', router: noteRoutes },
+  { path: '/bulletins', router: bulletinRoutes },
+  { path: '/ressources', router: ressourceRoutes },
+  { path: '/seances-virtuelles', router: seanceVirtuelleRoutes },
+  { path: '/examens', router: examenRoutes },
+  { path: '/sessions-examen', sessionExamenRoutes },
+  { path: '/repartitions', repartitionRoutes },
+  { path: '/accreditations', accreditationRoutes },
+  { path: '/chat', chatRoutes }
+];
+
+routesMapping.forEach(route => {
+  app.use(`/api${route.path}`, route.router);
+  app.use(route.path, route.router);
+});
 
 // Routes système
 app.get('/api/health', (req, res) => {
