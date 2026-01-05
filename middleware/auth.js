@@ -129,10 +129,13 @@ const authenticateToken = async (req, res, next) => {
     return res.status(500).json({
       error: 'Erreur d\'authentification',
       message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : 'Voir logs serveur',
+      details: error.stack, // On le met temporairement pour debugger en production
       code: 'AUTH_ERROR'
     });
   }
 };
+
 
 
 /**
