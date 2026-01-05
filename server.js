@@ -133,15 +133,25 @@ routesMapping.forEach(route => {
 });
 
 // Routes système
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  let dbStatus = 'Unknown';
+  try {
+    const { sequelize } = require('./config/database');
+    await sequelize.authenticate();
+    dbStatus = 'Connected';
+  } catch (e) {
+    dbStatus = 'Error: ' + e.message;
+  }
+
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.6-Diagnostic',
+    database: dbStatus,
     service: 'EDT Generator API'
   });
 });
+
 
 app.get('/api', (req, res) => {
   res.json({
