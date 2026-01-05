@@ -158,6 +158,14 @@ app.get('/api', (req, res) => {
   });
 });
 
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Backend EDT Generator est en ligne',
+    requested_url: req.originalUrl,
+    mode: process.env.NODE_ENV
+  });
+});
+
 // Gestion des erreurs 404
 app.use('*', (req, res) => {
   res.status(404).json({
