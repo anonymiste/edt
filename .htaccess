@@ -1,0 +1,12 @@
+RewriteEngine On
+
+# Ne pas toucher aux fichiers physiques existants (image, etc)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Rediriger toutes les autres requêtes vers l'application Node.js
+# Note : On utilise 127.0.0.1:5000 qui est le port par défaut configuré
+RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L]
+
+# Optionnel : Si le module Proxy n'est pas disponible, Passenger s'en chargera via le panel cPanel
+# Mais ce fichier aide Apache à comprendre que les sous-chemins doivent être gérés par Node.
